@@ -1,0 +1,22 @@
+llm:
+  base_url: "http://127.0.0.1:8000/v1"
+  api_key: "replace-with-your-api-key"
+  model: "qwen3.6-35b-a3b"
+  timeout_seconds: 60
+
+ocr:
+  url: "http://192.168.8.30:9000/ocr"
+  timeout_seconds: 30
+
+recording:
+  work_periods:
+    - "09:00-12:00"
+    - "13:30-18:00"
+  screenshot_interval_seconds: 300
+  idle_skip_minutes: 10
+  enable_tray: false
+
+storage:
+  data_dir: "data"
+  report_output_dir: "data/reports"
+  log_dir: "logs"

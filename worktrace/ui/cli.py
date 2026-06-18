@@ -9,6 +9,8 @@ from rich.table import Table
 
 from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError, load_config
+from worktrace.llm.client import LLMClient
+from worktrace.ocr.client import OCRClient
 
 
 app = typer.Typer(help="WorkTrace local daily report assistant.")
@@ -59,3 +61,33 @@ def config_json(
     """Print validated config as JSON."""
     settings = load_settings_or_exit(config)
     console.print(json.dumps(settings.model_dump(mode="json"), ensure_ascii=False, indent=2))
+
+
+@app.command("test-llm")
+def test_llm(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Test OpenAI-compatible LLM connectivity."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    ok, message = LLMClient(settings.llm).test_connection()
+    if ok:
+        console.print(f"[green]LLM OK:[/green] {message}")
+        return
+    console.print(f"[red]LLM failed:[/red] {message}")
+    raise typer.Exit(code=1)
+
+
+@app.command("test-ocr")
+def test_ocr(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Test OCR endpoint reachability."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    ok, message = OCRClient(settings.ocr).test_connection()
+    if ok:
+        console.print(f"[green]OCR OK:[/green] {message}")
+        return
+    console.print(f"[red]OCR failed:[/red] {message}")
+    raise typer.Exit(code=1)

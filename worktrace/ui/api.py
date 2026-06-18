@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -143,6 +143,21 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         return {"path": str(path)}
 
+    @app.get("/api/reports/latest/{kind}")
+    def latest_report(kind: str) -> dict[str, Any]:
+        path = latest_report_path(context.settings.storage.report_output_dir, kind, datetime.now())
+        if path is None:
+            raise HTTPException(status_code=404, detail=f"Unknown report kind: {kind}")
+        if not path.exists():
+            return {"kind": kind, "exists": False, "path": str(path), "content": "", "updated_at": None}
+        return {
+            "kind": kind,
+            "exists": True,
+            "path": str(path),
+            "content": path.read_text(encoding="utf-8"),
+            "updated_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
+        }
+
     @app.post("/api/test/llm")
     def test_llm() -> dict[str, Any]:
         ok, message = context.llm.test_connection()
@@ -154,6 +169,16 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         return {"ok": ok, "message": message}
 
     return app
+
+
+def latest_report_path(output_dir: Path, kind: str, now: datetime) -> Path | None:
+    if kind == "daily":
+        return output_dir / f"{now.date().isoformat()}-daily.md"
+    if kind == "weekly":
+        start = now.date() - timedelta(days=now.date().weekday())
+        end = start + timedelta(days=6)
+        return output_dir / f"{start.isoformat()}_to_{end.isoformat()}-weekly.md"
+    return None
 
 
 def pop_review_item(context: AppContext, event_id_prefix: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:

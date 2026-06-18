@@ -457,6 +457,22 @@ h3 {
   color: var(--muted);
 }
 
+.report-preview {
+  width: 100%;
+  max-height: 360px;
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+  color: var(--ink);
+  font-family: "Cascadia Mono", "Microsoft YaHei", monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
 .review-table {
   display: grid;
   gap: 8px;

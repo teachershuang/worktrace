@@ -13,6 +13,7 @@ const metricReviewEl = document.querySelector("#metric-review");
 const metricOcrEl = document.querySelector("#metric-ocr");
 const timelineListEl = document.querySelector("#timeline-list");
 const reviewListEl = document.querySelector("#review-list");
+const reportPreviewEl = document.querySelector("#report-preview");
 
 function setLog(text, failed = false) {
   logEl.textContent = text;
@@ -123,8 +124,33 @@ async function post(path, okText) {
     const result = await request(path, { method: "POST" });
     setLog(result.path ? `${okText}: ${result.path}` : okText);
     await refresh();
+    if (path.startsWith("/api/reports/")) {
+      await refreshReports();
+    }
   } catch (error) {
     setLog(error.message, true);
+  }
+}
+
+function renderReportBlock(label, report) {
+  if (!report.exists) {
+    return `## ${label}\n暂无已生成报告`;
+  }
+  return `## ${label}\n路径：${report.path}\n更新时间：${report.updated_at || "-"}\n\n${report.content}`;
+}
+
+async function refreshReports() {
+  try {
+    const [daily, weekly] = await Promise.all([
+      request("/api/reports/latest/daily"),
+      request("/api/reports/latest/weekly"),
+    ]);
+    reportPreviewEl.textContent = [
+      renderReportBlock("今日日报", daily),
+      renderReportBlock("本周周报", weekly),
+    ].join("\n\n---\n\n");
+  } catch (error) {
+    reportPreviewEl.textContent = `报告读取失败：${error.message}`;
   }
 }
 
@@ -142,6 +168,7 @@ document.addEventListener("click", event => {
   if (action === "record-once") post("/api/record-once", "已完成一次记录");
   if (action === "daily") post("/api/reports/daily", "日报已生成");
   if (action === "weekly") post("/api/reports/weekly", "周报已生成");
+  if (action === "refresh-reports") refreshReports().then(() => setLog("报告预览已刷新"));
   if (action === "test-ocr") post("/api/test/ocr", "OCR 测试完成");
   if (action === "test-llm") post("/api/test/llm", "LLM 测试完成");
   if (reviewWork) post(`/api/review/${reviewWork}/work`, "已标记为工作");
@@ -149,4 +176,7 @@ document.addEventListener("click", event => {
 });
 
 refresh().catch(error => setLog(error.message, true));
+refreshReports().catch(error => {
+  reportPreviewEl.textContent = `报告读取失败：${error.message}`;
+});
 setInterval(() => refresh().catch(error => setLog(error.message, true)), 10000);

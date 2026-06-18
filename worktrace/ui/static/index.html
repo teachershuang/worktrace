@@ -140,12 +140,14 @@
           <div class="quick-grid">
             <button class="quick-button" data-action="daily">生成今日日报</button>
             <button class="quick-button" data-action="weekly">生成本周周报</button>
+            <button class="quick-button" data-action="refresh-reports">刷新报告预览</button>
             <button class="quick-button" data-action="pause">暂停记录</button>
             <button class="quick-button" data-action="resume">恢复记录</button>
             <button class="quick-button danger" data-action="stop">停止记录</button>
             <button class="quick-button" data-action="start">开始记录</button>
           </div>
           <div class="log-box" id="log" aria-live="polite">准备就绪</div>
+          <pre class="report-preview" id="report-preview">尚未生成今日报告</pre>
         </article>
       </section>
 

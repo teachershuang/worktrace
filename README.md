@@ -112,6 +112,7 @@ python main.py console
 ```
 
 默认地址是 `http://127.0.0.1:8765`。控制台支持开始记录、暂停、恢复、停止、立即记录、查看今日时间轴、处理待确认事件、生成日报和周报。
+生成日报或周报后，控制台会直接读取最新 Markdown 报告并在页面内预览，便于快速检查内容是否只基于有效时间轴。
 
 控制台前端是本地静态页面，入口在 `worktrace/ui/static/index.html`，样式和交互分别在 `worktrace/ui/static/styles.css`、`worktrace/ui/static/app.js`。第一版素材包位于 `worktrace/ui/static/assets/`，包含参考图裁切出的助手、猫咪和托盘图标资源，运行时不依赖外部 CDN。
 

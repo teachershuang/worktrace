@@ -82,6 +82,15 @@ python main.py test-llm
 python main.py test-ocr
 ```
 
+运行环境诊断：
+
+```powershell
+python main.py doctor
+python main.py doctor --skip-services
+```
+
+`doctor` 会检查配置、目录写入权限、截图依赖、Windows 活跃窗口依赖，以及 OCR/LLM 连通性。
+
 立即记录一次：
 
 ```powershell

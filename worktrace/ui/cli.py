@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import platform
 from pathlib import Path
 
 import typer
@@ -101,6 +103,54 @@ def test_ocr(
         return
     console.print(f"[red]OCR failed:[/red] {message}")
     raise typer.Exit(code=1)
+
+
+@app.command("doctor")
+def doctor(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+    skip_services: bool = typer.Option(False, "--skip-services", help="Skip OCR and LLM network checks."),
+) -> None:
+    """Run local dependency and service diagnostics."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    rows: list[tuple[str, bool, str]] = []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        rows.append((name, ok, detail))
+
+    add("config", True, f"loaded {config}")
+    add("data_dir", check_writable_dir(settings.storage.data_dir), str(settings.storage.data_dir))
+    add("report_output_dir", check_writable_dir(settings.storage.report_output_dir), str(settings.storage.report_output_dir))
+    add("log_dir", check_writable_dir(settings.storage.log_dir), str(settings.storage.log_dir))
+    for module in ("mss", "PIL", "httpx", "yaml", "pydantic"):
+        add(f"import:{module}", module_available(module), "available" if module_available(module) else "missing")
+
+    if platform.system() == "Windows":
+        for module in ("win32gui", "win32process", "psutil"):
+            add(f"windows:{module}", module_available(module), "available" if module_available(module) else "missing")
+    else:
+        add("active_window", True, "non-Windows platforms use metadata fallback")
+
+    if skip_services:
+        add("ocr", True, "skipped")
+        add("llm", True, "skipped")
+    else:
+        ok, message = OCRClient(settings.ocr).test_connection()
+        add("ocr", ok, message)
+        ok, message = LLMClient(settings.llm).test_connection()
+        add("llm", ok, message)
+
+    table = Table(title="WorkTrace Doctor")
+    table.add_column("Check")
+    table.add_column("Status")
+    table.add_column("Detail")
+    all_ok = True
+    for name, ok, detail in rows:
+        all_ok = all_ok and ok
+        table.add_row(name, "[green]OK[/green]" if ok else "[red]FAIL[/red]", detail)
+    console.print(table)
+    if not all_ok:
+        raise typer.Exit(code=1)
 
 
 @app.command("record-once")
@@ -336,3 +386,18 @@ def pop_review_item(store: EventStore, day, event_id_prefix: str):
     selected = matches[0]
     remaining = [event for event in events if event.get("id") != selected.get("id")]
     return selected, remaining
+
+
+def module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def check_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        marker = path / ".worktrace_write_test"
+        marker.write_text("ok", encoding="utf-8")
+        marker.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False

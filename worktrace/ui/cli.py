@@ -9,8 +9,12 @@ from rich.table import Table
 
 from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError, load_config
+from worktrace.capture.screen import ScreenCapture
+from worktrace.classifier.activity import ActivityClassifier
 from worktrace.llm.client import LLMClient
 from worktrace.ocr.client import OCRClient
+from worktrace.runtime.recorder import WorkRecorder
+from worktrace.timeline.store import EventStore
 
 
 app = typer.Typer(help="WorkTrace local daily report assistant.")
@@ -25,6 +29,17 @@ def load_settings_or_exit(config: Path, verbose: bool = False):
     except ConfigError as exc:
         console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+def build_recorder(config: Path, verbose: bool = False) -> WorkRecorder:
+    settings = load_settings_or_exit(config, verbose=verbose)
+    llm = LLMClient(settings.llm)
+    return WorkRecorder(
+        capture=ScreenCapture(),
+        ocr=OCRClient(settings.ocr),
+        classifier=ActivityClassifier(llm),
+        store=EventStore(settings.storage.data_dir),
+    )
 
 
 @app.command("config-show")
@@ -91,3 +106,82 @@ def test_ocr(
         return
     console.print(f"[red]OCR failed:[/red] {message}")
     raise typer.Exit(code=1)
+
+
+@app.command("record-once")
+def record_once(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Capture, OCR, classify, and store one event."""
+    recorder = build_recorder(config, verbose=verbose)
+    try:
+        event = recorder.record_once()
+    except Exception as exc:
+        console.print(f"[red]record-once failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    classification = event["classification"]
+    console.print(
+        f"[green]Recorded:[/green] {classification['title']} "
+        f"(record={classification['should_record']}, review={classification['need_review']}, "
+        f"confidence={classification['confidence']})"
+    )
+
+
+@app.command("today-timeline")
+def today_timeline(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Show today's effective raw events."""
+    from datetime import datetime
+
+    settings = load_settings_or_exit(config, verbose=verbose)
+    store = EventStore(settings.storage.data_dir)
+    events = store.load_effective(datetime.now().date())
+    table = Table(title="Today's Effective Events")
+    table.add_column("Time")
+    table.add_column("Project")
+    table.add_column("Category")
+    table.add_column("Title")
+    table.add_column("Confidence")
+    for event in events:
+        classification = event.get("classification", {})
+        table.add_row(
+            str(event.get("captured_at", ""))[11:16],
+            str(classification.get("project") or "-"),
+            str(classification.get("category") or "-"),
+            str(classification.get("title") or "-"),
+            str(classification.get("confidence") or "-"),
+        )
+    console.print(table)
+
+
+@app.command("review-list")
+def review_list(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Show today's events that need review."""
+    from datetime import datetime
+
+    settings = load_settings_or_exit(config, verbose=verbose)
+    store = EventStore(settings.storage.data_dir)
+    events = store.load_review(datetime.now().date())
+    table = Table(title="Review Queue")
+    table.add_column("ID")
+    table.add_column("Time")
+    table.add_column("Title")
+    table.add_column("Summary")
+    table.add_column("Confidence")
+    for event in events:
+        classification = event.get("classification", {})
+        table.add_row(
+            str(event.get("id", ""))[:10],
+            str(event.get("captured_at", ""))[11:16],
+            str(classification.get("title") or "-"),
+            str(classification.get("summary") or "-"),
+            str(classification.get("confidence") or "-"),
+        )
+    console.print(table)

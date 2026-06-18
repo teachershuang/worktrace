@@ -6,9 +6,6 @@ import platform
 from dataclasses import dataclass
 from datetime import datetime
 
-import mss
-from PIL import Image
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +29,9 @@ class ScreenSnapshot:
 class ScreenCapture:
     def capture_primary(self) -> ScreenSnapshot:
         try:
+            import mss
+            from PIL import Image
+
             with mss.mss() as sct:
                 monitor = sct.monitors[1]
                 raw = sct.grab(monitor)

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+config.yaml
+logs/
+data/events/*.jsonl
+data/reports/*.md
+data/runtime_state.json

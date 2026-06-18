@@ -1,32 +1,137 @@
 # WorkTrace
 
-WorkTrace 是一个本地运行的日报生成助手 MVP。它通过截图、OCR 和 OpenAI-compatible 大模型服务识别有效工作事件，沉淀时间轴，并生成日报和周报。
+WorkTrace 是一个本地运行的日报生成助手 MVP。它在工作时间内定时截取主屏幕，调用局域网 OCR 服务识别文字，再调用 OpenAI-compatible 大模型判断当前屏幕是否形成有效工作事件，最终沉淀时间轴并生成日报、周报。
 
-当前版本优先实现 API/CLI 主流程，不依赖云端系统。
+第一版优先保证主流程可跑通，采用 CLI 控制和 JSONL 本地存储。托盘和更完整的桌面 UI 会作为后续阶段补齐。
 
-## 快速开始
+## 安装
 
 ```powershell
 python -m venv .venv
 .\\.venv\\Scripts\\Activate.ps1
 pip install -r requirements.txt
 Copy-Item config.example.yaml config.yaml
-python main.py --help
 ```
 
-## 目录
+编辑 `config.yaml`：
 
-- `worktrace/config`: 配置读取和校验
-- `worktrace/capture`: 截图与活跃窗口信息
+```yaml
+llm:
+  base_url: "http://127.0.0.1:8000/v1"
+  api_key: "replace-with-your-api-key"
+  model: "qwen3.6-35b-a3b"
+  timeout_seconds: 60
+
+ocr:
+  url: "http://192.168.8.30:9000/ocr"
+  timeout_seconds: 30
+```
+
+## 外部服务要求
+
+LLM 服务需要兼容 OpenAI Chat Completions：
+
+```text
+POST {base_url}/chat/completions
+Authorization: Bearer {api_key}
+```
+
+OCR 服务需要支持 multipart 文件上传：
+
+```text
+POST {ocr.url}
+file=screenshot.png
+```
+
+OCR 返回可以是纯文本，也可以是 JSON。JSON 中优先读取 `text`、`content`、`result`、`ocr_text`，也兼容 `lines[].text` 和 `boxes[].text`。
+
+## 常用命令
+
+查看配置：
+
+```powershell
+python main.py config-show
+```
+
+测试服务：
+
+```powershell
+python main.py test-llm
+python main.py test-ocr
+```
+
+立即记录一次：
+
+```powershell
+python main.py record-once
+```
+
+启动前台后台循环：
+
+```powershell
+python main.py start
+```
+
+暂停、恢复、停止循环：
+
+```powershell
+python main.py pause
+python main.py resume
+python main.py stop
+```
+
+查看今日时间轴和待确认事件：
+
+```powershell
+python main.py today-timeline
+python main.py review-list
+```
+
+确认待确认事件：
+
+```powershell
+python main.py review-mark-work <event-id-prefix>
+python main.py review-mark-nonwork <event-id-prefix>
+```
+
+生成报告：
+
+```powershell
+python main.py daily-report
+python main.py weekly-report
+```
+
+## 数据位置
+
+- 原始事件：`data/events/YYYY-MM-DD.raw.jsonl`
+- 有效时间轴事件：`data/events/YYYY-MM-DD.effective.jsonl`
+- 待确认事件：`data/events/YYYY-MM-DD.review.jsonl`
+- 日报和周报：`data/reports/`
+- 运行状态：`data/runtime_state.json`
+- 日志：`logs/worktrace.log`
+
+## 工作识别逻辑
+
+WorkTrace 不按应用名简单判断是否工作。每次记录会把当前时间、应用名、窗口标题、OCR 文本、上一条有效工作事件、最近 30 分钟摘要和今日项目列表发送给大模型。
+
+大模型必须返回严格 JSON。高置信度工作内容进入有效时间轴；低置信度内容进入待确认队列；高置信度非工作内容只保留在原始事件中，不参与日报。
+
+## 项目结构
+
+- `worktrace/config`: 配置读取、校验和日志初始化
+- `worktrace/capture`: 主屏截图与活跃窗口信息
 - `worktrace/ocr`: OCR HTTP 服务调用
 - `worktrace/llm`: OpenAI-compatible 大模型调用
 - `worktrace/classifier`: 屏幕内容工作事件识别
-- `worktrace/timeline`: 事件存储与时间轴合并
+- `worktrace/timeline`: 事件存储、待确认处理和时间轴合并
 - `worktrace/report`: 日报和周报生成
-- `worktrace/runtime`: 单次记录与后台循环
-- `worktrace/ui`: CLI 和本地控制台入口
-- `prompts`: 所有 LLM Prompt
+- `worktrace/runtime`: 单次记录、状态文件和定时循环
+- `worktrace/ui`: CLI 入口
+- `prompts`: 分类、合并、日报、周报 Prompt
 
-## 状态
+## 当前限制
 
-MVP 正在实现中。
+- 第一版默认只截主屏幕。
+- 托盘菜单和本地 HTML 控制台尚未实现，当前使用 CLI 控制。
+- 空闲检测配置已保留，第一版循环尚未接入系统空闲时间判断。
+- 时间轴合并使用本地确定性规则，后续可切换为 LLM 语义合并。

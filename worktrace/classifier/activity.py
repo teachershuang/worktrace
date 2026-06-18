@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any, Literal
@@ -104,7 +105,7 @@ def build_user_content(context: ClassificationContext) -> str:
         "recent_30_minute_summary": context.recent_summary,
         "project_names_today": context.project_names_today,
     }
-    return str(payload)
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def decision_to_dict(decision: ActivityDecision) -> dict[str, Any]:

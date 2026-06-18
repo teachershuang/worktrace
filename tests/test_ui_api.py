@@ -63,6 +63,57 @@ storage:
             finally:
                 logging.shutdown()
 
+    def test_config_summary_exposes_runtime_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.get("/api/config/summary")
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertEqual(payload["llm"]["model"], "test-model")
+                self.assertEqual(payload["ocr"]["protocol"], "multipart")
+                self.assertEqual(payload["storage"]["data_dir"], str(root / "data"))
+            finally:
+                logging.shutdown()
+
+    def test_daily_report_empty_state_returns_user_facing_message(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.post("/api/reports/daily")
+
+                self.assertEqual(response.status_code, 500)
+                self.assertIn("今天还没有可用于生成日报", response.json()["detail"])
+            finally:
+                logging.shutdown()
+
+
+def write_test_config(root: Path) -> Path:
+    config_path = root / "config.yaml"
+    config_path.write_text(
+        f"""
+llm:
+  base_url: "http://127.0.0.1:8000/v1"
+  api_key: "test"
+  model: "test-model"
+ocr:
+  url: "http://127.0.0.1:9000/ocr"
+storage:
+  data_dir: "{(root / "data").as_posix()}"
+  report_output_dir: "{(root / "reports").as_posix()}"
+  log_dir: "{(root / "logs").as_posix()}"
+""".strip(),
+        encoding="utf-8",
+    )
+    return config_path
+
 
 if __name__ == "__main__":
     unittest.main()

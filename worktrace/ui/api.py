@@ -69,6 +69,35 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
         }
 
+    @app.get("/api/config/summary")
+    def config_summary() -> dict[str, Any]:
+        settings = context.settings
+        return {
+            "llm": {
+                "base_url": settings.llm.base_url,
+                "model": settings.llm.model,
+                "timeout_seconds": settings.llm.timeout_seconds,
+                "trust_env": settings.llm.trust_env,
+            },
+            "ocr": {
+                "url": settings.ocr.url,
+                "protocol": settings.ocr.protocol,
+                "timeout_seconds": settings.ocr.timeout_seconds,
+                "trust_env": settings.ocr.trust_env,
+            },
+            "recording": {
+                "work_periods": settings.recording.work_periods,
+                "screenshot_interval_seconds": settings.recording.screenshot_interval_seconds,
+                "idle_skip_minutes": settings.recording.idle_skip_minutes,
+                "enable_tray": settings.recording.enable_tray,
+            },
+            "storage": {
+                "data_dir": str(settings.storage.data_dir),
+                "report_output_dir": str(settings.storage.report_output_dir),
+                "log_dir": str(settings.storage.log_dir),
+            },
+        }
+
     @app.post("/api/start")
     def start() -> dict[str, Any]:
         started = runtime.start_loop()

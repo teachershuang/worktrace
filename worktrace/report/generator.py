@@ -23,7 +23,7 @@ class ReportGenerator:
         target_day = day or datetime.now().date()
         timeline = merge_events(self.store.load_effective(target_day))
         if not timeline:
-            raise RuntimeError("no effective work events found for daily report")
+            raise RuntimeError("今天还没有可用于生成日报的有效工作事件。请先记录工作事件，或确认待确认事件后再生成。")
 
         prompt = load_prompt("generate_daily_report.md")
         content = self._generate(prompt, render_timeline(timeline))
@@ -38,7 +38,7 @@ class ReportGenerator:
         timeline = merge_events(self.store.load_effective_between(start, end))
         daily_reports = read_existing_daily_reports(self.output_dir, start, end)
         if not timeline and not daily_reports:
-            raise RuntimeError("no effective work events or daily reports found for weekly report")
+            raise RuntimeError("本周还没有可用于生成周报的有效工作事件或日报。请先生成日报或补充有效时间轴。")
 
         prompt = load_prompt("generate_weekly_report.md")
         user_content = "\n\n".join(

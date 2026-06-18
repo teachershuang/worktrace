@@ -13,6 +13,25 @@ pip install -r requirements.txt
 Copy-Item config.example.yaml config.yaml
 ```
 
+## Windows EXE 打包
+
+仓库提供 PyInstaller 的 onedir 打包配置，产物会生成到 `dist/WorkTrace/`：
+
+```powershell
+.\scripts\build_windows.ps1 -Clean
+```
+
+打包完成后可以直接运行：
+
+```powershell
+.\dist\WorkTrace\WorkTrace.exe config-show --config .\dist\WorkTrace\config.example.yaml
+.\dist\WorkTrace\WorkTrace.exe doctor --config .\dist\WorkTrace\config.example.yaml --skip-services
+.\dist\WorkTrace\WorkTrace.exe console --config .\dist\WorkTrace\config.example.yaml
+```
+
+`dist/WorkTrace/WorkTrace.exe` 是命令行入口，支持与 `python main.py` 相同的子命令。发行目录根部会复制 `config.example.yaml` 和 `config.lan.example.yaml`，真实使用时复制为 `config.yaml` 并填入本地服务地址和 API Key。
+配置中的相对 `data_dir`、`report_output_dir` 和 `log_dir` 会按配置文件所在目录解析，因此发行包默认会把数据、报告和日志写入 `dist/WorkTrace/data` 与 `dist/WorkTrace/logs`。
+
 编辑 `config.yaml`：
 
 ```yaml
@@ -115,6 +134,7 @@ python main.py console
 生成日报或周报后，控制台会直接读取最新 Markdown 报告并在页面内预览，便于快速检查内容是否只基于有效时间轴。
 
 控制台前端是本地静态页面，入口在 `worktrace/ui/static/index.html`，样式和交互分别在 `worktrace/ui/static/styles.css`、`worktrace/ui/static/app.js`。第一版素材包位于 `worktrace/ui/static/assets/`，包含参考图裁切出的助手、猫咪和托盘图标资源，运行时不依赖外部 CDN。
+控制台底部提供只读配置摘要，便于确认当前 LLM、OCR、工作时段和数据目录是否来自预期配置文件。
 
 启动系统托盘：
 

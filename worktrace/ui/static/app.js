@@ -14,6 +14,7 @@ const metricOcrEl = document.querySelector("#metric-ocr");
 const timelineListEl = document.querySelector("#timeline-list");
 const reviewListEl = document.querySelector("#review-list");
 const reportPreviewEl = document.querySelector("#report-preview");
+const settingsGridEl = document.querySelector("#settings-grid");
 
 function setLog(text, failed = false) {
   logEl.textContent = text;
@@ -27,6 +28,17 @@ async function request(path, options = {}) {
     throw new Error(body.detail || response.statusText);
   }
   return response.json();
+}
+
+function humanizeError(message) {
+  if (!message) return "操作失败，请查看日志。";
+  if (message.includes("no effective work events found for daily report")) {
+    return "今天还没有有效工作事件。请先记录一次，或在待确认中标记工作事件后再生成日报。";
+  }
+  if (message.includes("no effective work events or daily reports found for weekly report")) {
+    return "本周还没有可用于周报的日报或有效时间轴。请先记录工作事件并生成日报。";
+  }
+  return message;
 }
 
 function formatDuration(minutes) {
@@ -109,6 +121,31 @@ async function refresh() {
   }).join("") || `<div class="muted">暂无待确认事件</div>`;
 }
 
+function renderSettingItem(label, value) {
+  return `
+    <div class="setting-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+async function refreshSettings() {
+  const config = await request("/api/config/summary");
+  settingsGridEl.innerHTML = [
+    renderSettingItem("大模型地址", config.llm.base_url),
+    renderSettingItem("大模型名称", config.llm.model),
+    renderSettingItem("OCR 地址", config.ocr.url),
+    renderSettingItem("OCR 协议", config.ocr.protocol),
+    renderSettingItem("工作时段", config.recording.work_periods.join("、")),
+    renderSettingItem("截图间隔", `${config.recording.screenshot_interval_seconds}s`),
+    renderSettingItem("空闲跳过", `${config.recording.idle_skip_minutes} 分钟`),
+    renderSettingItem("数据目录", config.storage.data_dir),
+    renderSettingItem("报告目录", config.storage.report_output_dir),
+    renderSettingItem("日志目录", config.storage.log_dir),
+  ].join("");
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -118,8 +155,12 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-async function post(path, okText) {
+async function post(path, okText, button = null) {
   try {
+    if (button) {
+      button.disabled = true;
+      button.dataset.busy = "true";
+    }
     setLog("处理中...");
     const result = await request(path, { method: "POST" });
     setLog(result.path ? `${okText}: ${result.path}` : okText);
@@ -128,7 +169,12 @@ async function post(path, okText) {
       await refreshReports();
     }
   } catch (error) {
-    setLog(error.message, true);
+    setLog(humanizeError(error.message), true);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      delete button.dataset.busy;
+    }
   }
 }
 
@@ -161,22 +207,23 @@ document.addEventListener("click", event => {
   const reviewWork = target.dataset.reviewWork;
   const reviewNonwork = target.dataset.reviewNonwork;
   if (target.dataset.refresh !== undefined) refresh();
-  if (action === "start") post("/api/start", "记录循环已启动");
-  if (action === "pause") post("/api/pause", "记录已暂停");
-  if (action === "resume") post("/api/resume", "记录已恢复");
-  if (action === "stop") post("/api/stop", "停止请求已发送");
-  if (action === "record-once") post("/api/record-once", "已完成一次记录");
-  if (action === "daily") post("/api/reports/daily", "日报已生成");
-  if (action === "weekly") post("/api/reports/weekly", "周报已生成");
+  if (action === "start") post("/api/start", "记录循环已启动", target);
+  if (action === "pause") post("/api/pause", "记录已暂停", target);
+  if (action === "resume") post("/api/resume", "记录已恢复", target);
+  if (action === "stop") post("/api/stop", "停止请求已发送", target);
+  if (action === "record-once") post("/api/record-once", "已完成一次记录", target);
+  if (action === "daily") post("/api/reports/daily", "日报已生成", target);
+  if (action === "weekly") post("/api/reports/weekly", "周报已生成", target);
   if (action === "refresh-reports") refreshReports().then(() => setLog("报告预览已刷新"));
-  if (action === "test-ocr") post("/api/test/ocr", "OCR 测试完成");
-  if (action === "test-llm") post("/api/test/llm", "LLM 测试完成");
-  if (reviewWork) post(`/api/review/${reviewWork}/work`, "已标记为工作");
-  if (reviewNonwork) post(`/api/review/${reviewNonwork}/nonwork`, "已标记为非工作");
+  if (action === "test-ocr") post("/api/test/ocr", "OCR 测试完成", target);
+  if (action === "test-llm") post("/api/test/llm", "LLM 测试完成", target);
+  if (reviewWork) post(`/api/review/${reviewWork}/work`, "已标记为工作", target);
+  if (reviewNonwork) post(`/api/review/${reviewNonwork}/nonwork`, "已标记为非工作", target);
 });
 
 refresh().catch(error => setLog(error.message, true));
+refreshSettings().catch(error => setLog(humanizeError(error.message), true));
 refreshReports().catch(error => {
-  reportPreviewEl.textContent = `报告读取失败：${error.message}`;
+  reportPreviewEl.textContent = `报告读取失败：${humanizeError(error.message)}`;
 });
 setInterval(() => refresh().catch(error => setLog(error.message, true)), 10000);

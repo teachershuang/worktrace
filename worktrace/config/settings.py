@@ -113,5 +113,23 @@ def load_config(path: str | Path = "config.yaml") -> AppSettings:
     except ValidationError as exc:
         raise ConfigError(str(exc)) from exc
 
+    settings = resolve_relative_storage_paths(settings, config_path.parent)
     settings.ensure_directories()
     return settings
+
+
+def resolve_relative_storage_paths(settings: AppSettings, base_dir: Path) -> AppSettings:
+    storage = settings.storage.model_copy(
+        update={
+            "data_dir": resolve_path(settings.storage.data_dir, base_dir),
+            "report_output_dir": resolve_path(settings.storage.report_output_dir, base_dir),
+            "log_dir": resolve_path(settings.storage.log_dir, base_dir),
+        }
+    )
+    return settings.model_copy(update={"storage": storage})
+
+
+def resolve_path(path: Path, base_dir: Path) -> Path:
+    if path.is_absolute():
+        return path
+    return (base_dir / path).resolve()

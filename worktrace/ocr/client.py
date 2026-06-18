@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -26,6 +27,11 @@ class OCRClient:
         self.settings = settings
 
     def recognize_png(self, image_bytes: bytes) -> OCRResult:
+        if self.settings.protocol == "paddle_json":
+            return self._recognize_paddle_json(image_bytes)
+        return self._recognize_multipart(image_bytes)
+
+    def _recognize_multipart(self, image_bytes: bytes) -> OCRResult:
         files = {"file": ("screenshot.png", image_bytes, "image/png")}
         try:
             with httpx.Client(timeout=self.settings.timeout_seconds) as client:
@@ -42,7 +48,36 @@ class OCRClient:
 
         return OCRResult(text=response.text.strip(), raw={"text": response.text})
 
+    def _recognize_paddle_json(self, image_bytes: bytes) -> OCRResult:
+        payload = {
+            "documents": [
+                {
+                    "doc_id": "screen",
+                    "pages": [
+                        {
+                            "page_no": 1,
+                            "filename": "screenshot.png",
+                            "image_base64": base64.b64encode(image_bytes).decode("ascii"),
+                        }
+                    ],
+                }
+            ]
+        }
+        try:
+            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+                response = client.post(self.settings.url, json=payload)
+                response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.exception("OCR request failed")
+            raise OCRError(f"OCR request failed: {exc}") from exc
+
+        data = response.json()
+        return OCRResult(text=extract_ocr_text(data), raw=data)
+
     def test_connection(self) -> tuple[bool, str]:
+        if self.settings.protocol == "paddle_json":
+            return self._test_paddle_json_connection()
+
         # A minimal invalid PNG is still useful for testing reachability. Services may
         # return a 4xx for invalid image data, which proves the endpoint is alive.
         try:
@@ -57,12 +92,53 @@ class OCRClient:
         except httpx.HTTPError as exc:
             return False, f"OCR endpoint unreachable: {exc}"
 
+    def _test_paddle_json_connection(self) -> tuple[bool, str]:
+        try:
+            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+                response = client.get(paddle_health_url(self.settings.url))
+            if response.status_code < 500:
+                return True, f"HTTP {response.status_code}: Paddle OCR endpoint reachable"
+            return False, f"HTTP {response.status_code}: {response.text[:300]}"
+        except httpx.HTTPError as exc:
+            return False, f"OCR endpoint unreachable: {exc}"
+
 
 def extract_ocr_text(data: dict[str, Any]) -> str:
-    for key in ("text", "content", "result", "ocr_text"):
+    for key in ("text", "content", "result", "ocr_text", "full_text"):
         value = data.get(key)
         if isinstance(value, str):
             return value.strip()
+
+    texts = data.get("texts")
+    if isinstance(texts, list):
+        parts = [str(text) for text in texts if str(text).strip()]
+        if parts:
+            return "\n".join(parts).strip()
+
+    documents = data.get("documents")
+    if isinstance(documents, list):
+        parts = []
+        for document in documents:
+            if not isinstance(document, dict):
+                continue
+            full_text = document.get("full_text")
+            if isinstance(full_text, str) and full_text.strip():
+                parts.append(full_text)
+                continue
+            pages = document.get("pages")
+            if isinstance(pages, list):
+                for page in pages:
+                    if not isinstance(page, dict):
+                        continue
+                    page_text = page.get("full_text")
+                    if isinstance(page_text, str) and page_text.strip():
+                        parts.append(page_text)
+                        continue
+                    page_texts = page.get("texts")
+                    if isinstance(page_texts, list):
+                        parts.extend(str(text) for text in page_texts if str(text).strip())
+        if parts:
+            return "\n".join(parts).strip()
 
     lines = data.get("lines")
     if isinstance(lines, list):
@@ -89,3 +165,10 @@ def extract_ocr_text(data: dict[str, Any]) -> str:
             return "\n".join(parts).strip()
 
     return ""
+
+
+def paddle_health_url(ocr_url: str) -> str:
+    trimmed = ocr_url.rstrip("/")
+    if trimmed.endswith("/ocr"):
+        return f"{trimmed[:-4]}/health"
+    return f"{trimmed}/health"

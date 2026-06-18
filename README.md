@@ -25,6 +25,7 @@ llm:
 ocr:
   url: "http://192.168.8.30:9000/ocr"
   timeout_seconds: 30
+  protocol: "multipart"
 ```
 
 ## 外部服务要求
@@ -43,7 +44,24 @@ POST {ocr.url}
 file=screenshot.png
 ```
 
-OCR 返回可以是纯文本，也可以是 JSON。JSON 中优先读取 `text`、`content`、`result`、`ocr_text`，也兼容 `lines[].text` 和 `boxes[].text`。
+如果使用远端 PaddleOCR JSON 服务，可以把协议切到 `paddle_json`：
+
+```yaml
+ocr:
+  url: "http://192.168.8.29:8866/ocr"
+  timeout_seconds: 60
+  protocol: "paddle_json"
+```
+
+`paddle_json` 会发送 `documents[].pages[].image_base64`，并使用 `/health` 做连通性测试。OCR 返回可以是纯文本，也可以是 JSON。JSON 中优先读取 `text`、`content`、`result`、`ocr_text`、`full_text`，也兼容 `documents[].full_text`、`pages[].texts`、`lines[].text` 和 `boxes[].text`。
+
+仓库提供 `config.lan.example.yaml`，用于连接局域网示例服务。复制为 `config.yaml` 后需要自行填入有效的大模型 API Key，不要把真实密钥提交到仓库。
+
+当前局域网示例已验证：
+
+- 模型网关：`http://192.168.8.29:4000/v1`
+- 模型名称：`Qwen3.6-35B-A3B-GGUF`
+- OCR 服务：`http://192.168.8.29:8866/ocr`
 
 ## 常用命令
 

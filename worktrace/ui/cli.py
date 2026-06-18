@@ -50,6 +50,7 @@ def config_show(
     table.add_row("llm", "model", settings.llm.model)
     table.add_row("llm", "timeout_seconds", str(settings.llm.timeout_seconds))
     table.add_row("ocr", "url", settings.ocr.url)
+    table.add_row("ocr", "protocol", settings.ocr.protocol)
     table.add_row("ocr", "timeout_seconds", str(settings.ocr.timeout_seconds))
     table.add_row("recording", "work_periods", ", ".join(settings.recording.work_periods))
     table.add_row("recording", "screenshot_interval_seconds", str(settings.recording.screenshot_interval_seconds))

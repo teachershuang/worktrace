@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -32,6 +32,7 @@ class LLMSettings(BaseModel):
 class OCRSettings(BaseModel):
     url: str = Field(min_length=1)
     timeout_seconds: float = Field(default=30, gt=0)
+    protocol: Literal["multipart", "paddle_json"] = "multipart"
 
 
 class RecordingSettings(BaseModel):

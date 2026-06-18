@@ -1,13 +1,13 @@
 llm:
-  base_url: "http://127.0.0.1:8000/v1"
-  api_key: "replace-with-your-api-key"
-  model: "qwen3.6-35b-a3b"
-  timeout_seconds: 60
+  base_url: "http://192.168.8.29:4000/v1"
+  api_key: "replace-with-lan-llm-api-key"
+  model: "Qwen3.6-35B-A3B-GGUF"
+  timeout_seconds: 120
 
 ocr:
-  url: "http://192.168.8.30:9000/ocr"
-  timeout_seconds: 30
-  protocol: "multipart"
+  url: "http://192.168.8.29:8866/ocr"
+  timeout_seconds: 60
+  protocol: "paddle_json"
 
 recording:
   work_periods:

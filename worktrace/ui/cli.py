@@ -13,9 +13,11 @@ from worktrace.capture.screen import ScreenCapture
 from worktrace.classifier.activity import ActivityClassifier
 from worktrace.llm.client import LLMClient
 from worktrace.ocr.client import OCRClient
+from worktrace.report.generator import ReportGenerator
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.recorder import WorkRecorder
 from worktrace.runtime.state import RuntimeStateStore
+from worktrace.timeline.merge import merge_events
 from worktrace.timeline.store import EventStore
 
 
@@ -145,21 +147,20 @@ def today_timeline(
 
     settings = load_settings_or_exit(config, verbose=verbose)
     store = EventStore(settings.storage.data_dir)
-    events = store.load_effective(datetime.now().date())
-    table = Table(title="Today's Effective Events")
-    table.add_column("Time")
+    items = merge_events(store.load_effective(datetime.now().date()))
+    table = Table(title="Today's Timeline")
+    table.add_column("Period")
     table.add_column("Project")
     table.add_column("Category")
     table.add_column("Title")
-    table.add_column("Confidence")
-    for event in events:
-        classification = event.get("classification", {})
+    table.add_column("Summary")
+    for item in items:
         table.add_row(
-            str(event.get("captured_at", ""))[11:16],
-            str(classification.get("project") or "-"),
-            str(classification.get("category") or "-"),
-            str(classification.get("title") or "-"),
-            str(classification.get("confidence") or "-"),
+            f"{item.start_at:%H:%M}-{item.end_at:%H:%M}",
+            str(item.project or "-"),
+            item.category,
+            item.title,
+            item.summary,
         )
     console.print(table)
 
@@ -191,6 +192,87 @@ def review_list(
             str(classification.get("confidence") or "-"),
         )
     console.print(table)
+
+
+@app.command("review-mark-work")
+def review_mark_work(
+    event_id_prefix: str = typer.Argument(..., help="ID or ID prefix from review-list."),
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Mark a review item as work and add it to effective timeline."""
+    from datetime import datetime
+
+    settings = load_settings_or_exit(config, verbose=verbose)
+    store = EventStore(settings.storage.data_dir)
+    day = datetime.now().date()
+    event, remaining = pop_review_item(store, day, event_id_prefix)
+    classification = dict(event.get("classification", {}))
+    classification["should_record"] = True
+    classification["is_work"] = True
+    classification["need_review"] = False
+    classification["skip_reason"] = None
+    event["classification"] = classification
+    store.replace_review(day, remaining)
+    store.append_effective(event, day)
+    console.print(f"[green]Marked as work:[/green] {event.get('id')}")
+
+
+@app.command("review-mark-nonwork")
+def review_mark_nonwork(
+    event_id_prefix: str = typer.Argument(..., help="ID or ID prefix from review-list."),
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Mark a review item as non-work and remove it from review queue."""
+    from datetime import datetime
+
+    settings = load_settings_or_exit(config, verbose=verbose)
+    store = EventStore(settings.storage.data_dir)
+    day = datetime.now().date()
+    event, remaining = pop_review_item(store, day, event_id_prefix)
+    store.replace_review(day, remaining)
+    console.print(f"[yellow]Marked as non-work:[/yellow] {event.get('id')}")
+
+
+@app.command("daily-report")
+def daily_report(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Generate today's daily report."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    generator = ReportGenerator(
+        llm=LLMClient(settings.llm),
+        store=EventStore(settings.storage.data_dir),
+        output_dir=settings.storage.report_output_dir,
+    )
+    try:
+        path = generator.build_daily_report()
+    except Exception as exc:
+        console.print(f"[red]daily report failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]Daily report written:[/green] {path}")
+
+
+@app.command("weekly-report")
+def weekly_report(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Generate this week's weekly report."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    generator = ReportGenerator(
+        llm=LLMClient(settings.llm),
+        store=EventStore(settings.storage.data_dir),
+        output_dir=settings.storage.report_output_dir,
+    )
+    try:
+        path = generator.build_weekly_report()
+    except Exception as exc:
+        console.print(f"[red]weekly report failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]Weekly report written:[/green] {path}")
 
 
 @app.command("start")
@@ -242,3 +324,17 @@ def stop_recording(
     settings = load_settings_or_exit(config)
     build_state_store(settings).request_stop()
     console.print("[yellow]Stop requested.[/yellow]")
+
+
+def pop_review_item(store: EventStore, day, event_id_prefix: str):
+    events = store.load_review(day)
+    matches = [event for event in events if str(event.get("id", "")).startswith(event_id_prefix)]
+    if not matches:
+        console.print(f"[red]No review event matches:[/red] {event_id_prefix}")
+        raise typer.Exit(code=1)
+    if len(matches) > 1:
+        console.print(f"[red]Multiple review events match:[/red] {event_id_prefix}")
+        raise typer.Exit(code=1)
+    selected = matches[0]
+    remaining = [event for event in events if event.get("id") != selected.get("id")]
+    return selected, remaining

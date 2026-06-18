@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from worktrace.config.settings import AppSettings
+from worktrace.capture.idle import get_idle_seconds
 from worktrace.runtime.recorder import WorkRecorder
 from worktrace.runtime.state import RuntimeStateStore
 from worktrace.runtime.time_windows import is_within_work_periods
@@ -55,6 +56,13 @@ class BackgroundRecorderLoop:
 
             if not status.in_work_period:
                 logger.info("outside configured work periods, skipping")
+                self._sleep_short()
+                continue
+
+            idle_seconds = get_idle_seconds()
+            idle_limit_seconds = self.settings.recording.idle_skip_minutes * 60
+            if idle_limit_seconds > 0 and idle_seconds is not None and idle_seconds >= idle_limit_seconds:
+                logger.info("system idle for %.0fs, skipping record cycle", idle_seconds)
                 self._sleep_short()
                 continue
 

@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 
+from worktrace.capture.idle import get_idle_seconds
 from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.time_windows import is_within_work_periods
@@ -60,6 +61,8 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "work_periods": context.settings.recording.work_periods,
             "screenshot_interval_seconds": context.settings.recording.screenshot_interval_seconds,
             "ocr_consecutive_failures": context.recorder.consecutive_ocr_failures,
+            "idle_seconds": get_idle_seconds(),
+            "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
         }
 
     @app.post("/api/start")
@@ -364,6 +367,7 @@ def console_html() -> str:
         <div class="status-row"><span>暂停状态</span>${pill(status.paused ? "已暂停" : "未暂停", status.paused ? "warn" : "ok")}</div>
         <div class="status-row"><span>工作时间</span>${pill(status.in_work_period ? "是" : "否", status.in_work_period ? "ok" : "warn")}</div>
         <div class="status-row"><span>OCR 连续失败</span>${pill(status.ocr_consecutive_failures, status.ocr_consecutive_failures ? "bad" : "ok")}</div>
+        <div class="status-row"><span>系统空闲</span><span>${status.idle_seconds === null ? "未知" : Math.round(status.idle_seconds) + "s"}</span></div>
         <div class="status-row"><span>截图间隔</span><span>${status.screenshot_interval_seconds}s</span></div>
         <div class="status-row"><span>当前时间</span><span>${status.now.replace("T", " ")}</span></div>
       `;

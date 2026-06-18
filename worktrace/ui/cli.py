@@ -4,21 +4,17 @@ import json
 from pathlib import Path
 
 import typer
+import uvicorn
 from rich.console import Console
 from rich.table import Table
 
 from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError, load_config
-from worktrace.capture.screen import ScreenCapture
-from worktrace.classifier.activity import ActivityClassifier
-from worktrace.llm.client import LLMClient
-from worktrace.ocr.client import OCRClient
-from worktrace.report.generator import ReportGenerator
+from worktrace.runtime.app_context import build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
-from worktrace.runtime.recorder import WorkRecorder
-from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.merge import merge_events
 from worktrace.timeline.store import EventStore
+from worktrace.ui.api import create_app
 
 
 app = typer.Typer(help="WorkTrace local daily report assistant.")
@@ -33,21 +29,6 @@ def load_settings_or_exit(config: Path, verbose: bool = False):
     except ConfigError as exc:
         console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
-
-
-def build_recorder(config: Path, verbose: bool = False) -> WorkRecorder:
-    settings = load_settings_or_exit(config, verbose=verbose)
-    llm = LLMClient(settings.llm)
-    return WorkRecorder(
-        capture=ScreenCapture(),
-        ocr=OCRClient(settings.ocr),
-        classifier=ActivityClassifier(llm),
-        store=EventStore(settings.storage.data_dir),
-    )
-
-
-def build_state_store(settings) -> RuntimeStateStore:
-    return RuntimeStateStore(settings.storage.data_dir / "runtime_state.json")
 
 
 @app.command("config-show")
@@ -122,9 +103,9 @@ def record_once(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Capture, OCR, classify, and store one event."""
-    recorder = build_recorder(config, verbose=verbose)
+    context = build_app_context(config, verbose=verbose)
     try:
-        event = recorder.record_once()
+        event = context.recorder.record_once()
     except Exception as exc:
         console.print(f"[red]record-once failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -241,14 +222,9 @@ def daily_report(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Generate today's daily report."""
-    settings = load_settings_or_exit(config, verbose=verbose)
-    generator = ReportGenerator(
-        llm=LLMClient(settings.llm),
-        store=EventStore(settings.storage.data_dir),
-        output_dir=settings.storage.report_output_dir,
-    )
+    context = build_app_context(config, verbose=verbose)
     try:
-        path = generator.build_daily_report()
+        path = context.reports.build_daily_report()
     except Exception as exc:
         console.print(f"[red]daily report failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -261,14 +237,9 @@ def weekly_report(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Generate this week's weekly report."""
-    settings = load_settings_or_exit(config, verbose=verbose)
-    generator = ReportGenerator(
-        llm=LLMClient(settings.llm),
-        store=EventStore(settings.storage.data_dir),
-        output_dir=settings.storage.report_output_dir,
-    )
+    context = build_app_context(config, verbose=verbose)
     try:
-        path = generator.build_weekly_report()
+        path = context.reports.build_weekly_report()
     except Exception as exc:
         console.print(f"[red]weekly report failed:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -281,17 +252,10 @@ def start_recording(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Start the foreground background recording loop."""
-    settings = load_settings_or_exit(config, verbose=verbose)
-    llm = LLMClient(settings.llm)
-    recorder = WorkRecorder(
-        capture=ScreenCapture(),
-        ocr=OCRClient(settings.ocr),
-        classifier=ActivityClassifier(llm),
-        store=EventStore(settings.storage.data_dir),
-    )
+    context = build_app_context(config, verbose=verbose)
     console.print("[green]WorkTrace recording loop started.[/green] Press Ctrl+C to exit.")
     try:
-        BackgroundRecorderLoop(settings, recorder, build_state_store(settings)).run_forever()
+        BackgroundRecorderLoop(context.settings, context.recorder, context.state_store).run_forever()
     except KeyboardInterrupt:
         console.print("[yellow]Recording loop exited.[/yellow]")
 
@@ -301,8 +265,8 @@ def pause_recording(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
 ) -> None:
     """Pause the background recording loop."""
-    settings = load_settings_or_exit(config)
-    build_state_store(settings).pause()
+    context = build_app_context(config)
+    context.state_store.pause()
     console.print("[yellow]Recording paused.[/yellow]")
 
 
@@ -311,8 +275,8 @@ def resume_recording(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
 ) -> None:
     """Resume the background recording loop."""
-    settings = load_settings_or_exit(config)
-    build_state_store(settings).resume()
+    context = build_app_context(config)
+    context.state_store.resume()
     console.print("[green]Recording resumed.[/green]")
 
 
@@ -321,9 +285,22 @@ def stop_recording(
     config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
 ) -> None:
     """Ask the foreground recording loop to stop."""
-    settings = load_settings_or_exit(config)
-    build_state_store(settings).request_stop()
+    context = build_app_context(config)
+    context.state_store.request_stop()
     console.print("[yellow]Stop requested.[/yellow]")
+
+
+@app.command("console")
+def run_console(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Console host."),
+    port: int = typer.Option(8765, "--port", help="Console port."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Run the local FastAPI control console."""
+    app_instance = create_app(config, verbose=verbose)
+    console.print(f"[green]WorkTrace console:[/green] http://{host}:{port}")
+    uvicorn.run(app_instance, host=host, port=port, log_level="info")
 
 
 def pop_review_item(store: EventStore, day, event_id_prefix: str):

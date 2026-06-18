@@ -72,6 +72,8 @@ python main.py record-once
 python main.py start
 ```
 
+启动记录会清除上一次运行留下的暂停和停止标记。
+
 启动本地控制台：
 
 ```powershell

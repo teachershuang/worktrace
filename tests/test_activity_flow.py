@@ -13,6 +13,7 @@ from worktrace.classifier.activity import (
 )
 from worktrace.ocr.client import OCRResult
 from worktrace.runtime.recorder import WorkRecorder
+from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.store import EventStore
 
 
@@ -109,6 +110,18 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertEqual(len(store.load_review(captured_at.date())), 1)
             self.assertEqual(len(store.load_effective(captured_at.date())), 0)
             self.assertEqual(store.load_review(captured_at.date())[0]["id"], event["id"])
+
+    def test_start_state_clears_pause_and_stop_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+
+            store.pause()
+            store.request_stop()
+            store.start()
+
+            state = store.load()
+            self.assertFalse(state.paused)
+            self.assertFalse(state.stop_requested)
 
 
 if __name__ == "__main__":

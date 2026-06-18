@@ -43,6 +43,9 @@ class RuntimeStateStore:
         current = self.load()
         self.save(RuntimeState(paused=False, stop_requested=current.stop_requested))
 
+    def start(self) -> None:
+        self.save(RuntimeState(paused=False, stop_requested=False))
+
     def request_stop(self) -> None:
         current = self.load()
         self.save(RuntimeState(paused=current.paused, stop_requested=True))

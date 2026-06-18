@@ -13,7 +13,9 @@ from worktrace.capture.screen import ScreenCapture
 from worktrace.classifier.activity import ActivityClassifier
 from worktrace.llm.client import LLMClient
 from worktrace.ocr.client import OCRClient
+from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.recorder import WorkRecorder
+from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.store import EventStore
 
 
@@ -40,6 +42,10 @@ def build_recorder(config: Path, verbose: bool = False) -> WorkRecorder:
         classifier=ActivityClassifier(llm),
         store=EventStore(settings.storage.data_dir),
     )
+
+
+def build_state_store(settings) -> RuntimeStateStore:
+    return RuntimeStateStore(settings.storage.data_dir / "runtime_state.json")
 
 
 @app.command("config-show")
@@ -185,3 +191,54 @@ def review_list(
             str(classification.get("confidence") or "-"),
         )
     console.print(table)
+
+
+@app.command("start")
+def start_recording(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Start the foreground background recording loop."""
+    settings = load_settings_or_exit(config, verbose=verbose)
+    llm = LLMClient(settings.llm)
+    recorder = WorkRecorder(
+        capture=ScreenCapture(),
+        ocr=OCRClient(settings.ocr),
+        classifier=ActivityClassifier(llm),
+        store=EventStore(settings.storage.data_dir),
+    )
+    console.print("[green]WorkTrace recording loop started.[/green] Press Ctrl+C to exit.")
+    try:
+        BackgroundRecorderLoop(settings, recorder, build_state_store(settings)).run_forever()
+    except KeyboardInterrupt:
+        console.print("[yellow]Recording loop exited.[/yellow]")
+
+
+@app.command("pause")
+def pause_recording(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Pause the background recording loop."""
+    settings = load_settings_or_exit(config)
+    build_state_store(settings).pause()
+    console.print("[yellow]Recording paused.[/yellow]")
+
+
+@app.command("resume")
+def resume_recording(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Resume the background recording loop."""
+    settings = load_settings_or_exit(config)
+    build_state_store(settings).resume()
+    console.print("[green]Recording resumed.[/green]")
+
+
+@app.command("stop")
+def stop_recording(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Ask the foreground recording loop to stop."""
+    settings = load_settings_or_exit(config)
+    build_state_store(settings).request_stop()
+    console.print("[yellow]Stop requested.[/yellow]")

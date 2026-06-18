@@ -3,11 +3,13 @@ llm:
   api_key: "replace-with-your-api-key"
   model: "qwen3.6-35b-a3b"
   timeout_seconds: 60
+  trust_env: false
 
 ocr:
   url: "http://192.168.8.30:9000/ocr"
   timeout_seconds: 30
   protocol: "multipart"
+  trust_env: false
 
 recording:
   work_periods:

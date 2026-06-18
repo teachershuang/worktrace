@@ -47,7 +47,7 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {self.settings.api_key}"
 
         try:
-            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+            with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
                 response.raise_for_status()
         except httpx.HTTPError as exc:

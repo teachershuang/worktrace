@@ -3,11 +3,13 @@ llm:
   api_key: "replace-with-lan-llm-api-key"
   model: "Qwen3.6-35B-A3B-GGUF"
   timeout_seconds: 120
+  trust_env: false
 
 ocr:
   url: "http://192.168.8.29:8866/ocr"
   timeout_seconds: 60
   protocol: "paddle_json"
+  trust_env: false
 
 recording:
   work_periods:

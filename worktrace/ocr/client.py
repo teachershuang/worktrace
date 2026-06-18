@@ -34,7 +34,7 @@ class OCRClient:
     def _recognize_multipart(self, image_bytes: bytes) -> OCRResult:
         files = {"file": ("screenshot.png", image_bytes, "image/png")}
         try:
-            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+            with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.post(self.settings.url, files=files)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
@@ -64,7 +64,7 @@ class OCRClient:
             ]
         }
         try:
-            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+            with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.post(self.settings.url, json=payload)
                 response.raise_for_status()
         except httpx.HTTPError as exc:
@@ -81,7 +81,7 @@ class OCRClient:
         # A minimal invalid PNG is still useful for testing reachability. Services may
         # return a 4xx for invalid image data, which proves the endpoint is alive.
         try:
-            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+            with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.post(
                     self.settings.url,
                     files={"file": ("empty.png", b"", "image/png")},
@@ -94,7 +94,7 @@ class OCRClient:
 
     def _test_paddle_json_connection(self) -> tuple[bool, str]:
         try:
-            with httpx.Client(timeout=self.settings.timeout_seconds) as client:
+            with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.get(paddle_health_url(self.settings.url))
             if response.status_code < 500:
                 return True, f"HTTP {response.status_code}: Paddle OCR endpoint reachable"

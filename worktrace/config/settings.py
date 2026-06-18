@@ -27,12 +27,14 @@ class LLMSettings(BaseModel):
     api_key: str = ""
     model: str = Field(min_length=1)
     timeout_seconds: float = Field(default=60, gt=0)
+    trust_env: bool = False
 
 
 class OCRSettings(BaseModel):
     url: str = Field(min_length=1)
     timeout_seconds: float = Field(default=30, gt=0)
     protocol: Literal["multipart", "paddle_json"] = "multipart"
+    trust_env: bool = False
 
 
 class RecordingSettings(BaseModel):

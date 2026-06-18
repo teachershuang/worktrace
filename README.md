@@ -21,11 +21,13 @@ llm:
   api_key: "replace-with-your-api-key"
   model: "qwen3.6-35b-a3b"
   timeout_seconds: 60
+  trust_env: false
 
 ocr:
   url: "http://192.168.8.30:9000/ocr"
   timeout_seconds: 30
   protocol: "multipart"
+  trust_env: false
 ```
 
 ## 外部服务要求
@@ -54,6 +56,8 @@ ocr:
 ```
 
 `paddle_json` 会发送 `documents[].pages[].image_base64`，并使用 `/health` 做连通性测试。OCR 返回可以是纯文本，也可以是 JSON。JSON 中优先读取 `text`、`content`、`result`、`ocr_text`、`full_text`，也兼容 `documents[].full_text`、`pages[].texts`、`lines[].text` 和 `boxes[].text`。
+
+`llm.trust_env` 和 `ocr.trust_env` 默认是 `false`，表示不读取系统代理环境变量。局域网和本地服务建议保持关闭；如果必须通过系统代理访问外部服务，再显式改为 `true`。
 
 仓库提供 `config.lan.example.yaml`，用于连接局域网示例服务。复制为 `config.yaml` 后需要自行填入有效的大模型 API Key，不要把真实密钥提交到仓库。
 

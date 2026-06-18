@@ -15,6 +15,7 @@ from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.timeline.merge import merge_events
 from worktrace.timeline.store import EventStore
 from worktrace.ui.api import create_app
+from worktrace.ui.tray import run_tray
 
 
 app = typer.Typer(help="WorkTrace local daily report assistant.")
@@ -301,6 +302,21 @@ def run_console(
     app_instance = create_app(config, verbose=verbose)
     console.print(f"[green]WorkTrace console:[/green] http://{host}:{port}")
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
+
+
+@app.command("tray")
+def tray(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Console host used by tray."),
+    port: int = typer.Option(8765, "--port", help="Console port used by tray."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Run WorkTrace from the system tray."""
+    try:
+        run_tray(config_path=config, host=host, port=port, verbose=verbose)
+    except ImportError as exc:
+        console.print(f"[red]Tray dependencies missing:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
 
 
 def pop_review_item(store: EventStore, day, event_id_prefix: str):

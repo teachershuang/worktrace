@@ -10,6 +10,8 @@ from rich.table import Table
 
 from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError, load_config
+from worktrace.llm.client import LLMClient
+from worktrace.ocr.client import OCRClient
 from worktrace.runtime.app_context import build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.timeline.merge import merge_events

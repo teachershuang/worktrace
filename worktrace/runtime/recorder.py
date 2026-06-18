@@ -82,7 +82,7 @@ class WorkRecorder:
         raw_event = self.store.append_raw(event, now.date())
         if decision.need_review:
             self.store.append_review(raw_event, now.date())
-        if decision.should_record:
+        elif decision.should_record:
             self.store.append_effective(raw_event, now.date())
 
         logger.info(

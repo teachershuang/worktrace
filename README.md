@@ -119,6 +119,12 @@ python main.py daily-report
 python main.py weekly-report
 ```
 
+运行测试：
+
+```powershell
+python -m unittest discover -s tests
+```
+
 ## 数据位置
 
 - 原始事件：`data/events/YYYY-MM-DD.raw.jsonl`

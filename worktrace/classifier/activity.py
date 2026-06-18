@@ -89,8 +89,14 @@ class ActivityClassifier:
             logger.exception("activity classification failed")
             raise
 
-        if decision.confidence < 0.6 and decision.should_record:
-            decision = decision.model_copy(update={"should_record": False, "need_review": True})
+        updates: dict[str, Any] = {}
+        if decision.confidence < 0.6:
+            updates["should_record"] = False
+            updates["need_review"] = True
+        if decision.need_review:
+            updates["should_record"] = False
+        if updates:
+            decision = decision.model_copy(update=updates)
         return decision
 
 

@@ -8,5 +8,6 @@ Pillow>=10.4.0
 psutil>=6.0.0
 pywin32>=306; platform_system == "Windows"
 pystray>=0.19.5
+pywebview>=5.4
 typer>=0.12.3
 rich>=13.7.1

@@ -3,8 +3,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import platform
-import threading
-import time
 import webbrowser
 from pathlib import Path
 
@@ -22,6 +20,7 @@ from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.timeline.merge import merge_events
 from worktrace.timeline.store import EventStore
 from worktrace.ui.api import create_app
+from worktrace.ui.native import launch_native_window
 from worktrace.ui.tray import run_tray
 
 
@@ -63,11 +62,15 @@ def launch_desktop(
         run_tray(config_path=config_path, host=host, port=port, verbose=verbose)
         return
 
-    def open_console_later() -> None:
-        time.sleep(1.2)
-        webbrowser.open(f"http://{host}:{port}")
+    try:
+        launch_native_window(config_path=config_path, host=host, port=port, verbose=verbose)
+        return
+    except ImportError:
+        console.print("[yellow]Native desktop runtime unavailable, falling back to browser console.[/yellow]")
+    except Exception as exc:
+        console.print(f"[yellow]Native desktop launch failed, falling back to browser console:[/yellow] {exc}")
 
-    threading.Thread(target=open_console_later, daemon=True, name="worktrace-open-browser").start()
+    webbrowser.open(f"http://{host}:{port}")
     app_instance = create_app(config_path, verbose=verbose)
     console.print(f"[green]WorkTrace desktop:[/green] http://{host}:{port}")
     console.print(f"[cyan]Config:[/cyan] {config_path}")
@@ -160,11 +163,11 @@ def doctor(
     add("data_dir", check_writable_dir(settings.storage.data_dir), str(settings.storage.data_dir))
     add("report_output_dir", check_writable_dir(settings.storage.report_output_dir), str(settings.storage.report_output_dir))
     add("log_dir", check_writable_dir(settings.storage.log_dir), str(settings.storage.log_dir))
-    for module in ("mss", "PIL", "httpx", "yaml", "pydantic"):
+    for module in ("mss", "PIL", "httpx", "yaml", "pydantic", "webview"):
         add(f"import:{module}", module_available(module), "available" if module_available(module) else "missing")
 
     if platform.system() == "Windows":
-        for module in ("win32gui", "win32process", "psutil"):
+        for module in ("win32gui", "win32process", "psutil", "pythonnet", "clr_loader", "clr"):
             add(f"windows:{module}", module_available(module), "available" if module_available(module) else "missing")
     else:
         add("active_window", True, "non-Windows platforms use metadata fallback")
@@ -410,6 +413,17 @@ def tray(
     except ImportError as exc:
         console.print(f"[red]Tray dependencies missing:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+@app.command("desktop")
+def desktop(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Desktop host."),
+    port: int = typer.Option(8765, "--port", help="Desktop port."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
+) -> None:
+    """Run WorkTrace in desktop window mode with browser fallback."""
+    launch_desktop(config=config, host=host, port=port, verbose=verbose)
 
 
 def pop_review_item(store: EventStore, day, event_id_prefix: str):

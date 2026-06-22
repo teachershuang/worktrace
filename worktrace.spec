@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+
 
 ROOT = Path(SPECPATH)
 
@@ -11,11 +13,17 @@ datas = [
     (str(ROOT / "config.example.yaml"), "."),
     (str(ROOT / "config.lan.example.yaml"), "."),
 ]
+datas += collect_data_files("webview")
 
 hiddenimports = [
     "PIL._tkinter_finder",
     "win32timezone",
+    "clr",
 ]
+hiddenimports += collect_submodules("webview")
+hiddenimports += collect_submodules("pythonnet")
+hiddenimports += collect_submodules("clr_loader")
+hiddenimports += collect_submodules("proxy_tools")
 
 
 a = Analysis(
@@ -43,6 +51,23 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+cli_exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="WorkTrace-cli",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
     console=True,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -52,6 +77,7 @@ exe = EXE(
 )
 coll = COLLECT(
     exe,
+    cli_exe,
     a.binaries,
     a.datas,
     strip=False,

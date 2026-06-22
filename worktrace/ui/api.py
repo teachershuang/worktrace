@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from worktrace import __version__
 from worktrace.capture.idle import get_idle_seconds
+from worktrace.config.settings import ConfigError
+from worktrace.llm.client import LLMError
+from worktrace.ocr.client import OCRError
+from worktrace.runtime.autostart import AutostartManager
 from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.time_windows import is_within_work_periods
@@ -44,7 +49,8 @@ class ConsoleRuntime:
 def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -> FastAPI:
     context = build_app_context(config_path, verbose=verbose)
     runtime = ConsoleRuntime(context)
-    app = FastAPI(title="WorkTrace Local Console", version="0.1.0")
+    autostart = AutostartManager(config_path)
+    app = FastAPI(title="WorkTrace Local Console", version=__version__)
     app.state.runtime = runtime
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -72,6 +78,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
     @app.get("/api/config/summary")
     def config_summary() -> dict[str, Any]:
         settings = context.settings
+        autostart_status = autostart.status()
         return {
             "llm": {
                 "base_url": settings.llm.base_url,
@@ -96,7 +103,27 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "report_output_dir": str(settings.storage.report_output_dir),
                 "log_dir": str(settings.storage.log_dir),
             },
+            "desktop": {
+                "autostart_supported": autostart_status.supported,
+                "autostart_enabled": autostart_status.enabled,
+                "autostart_mode": autostart_status.mode,
+                "autostart_path": autostart_status.startup_file,
+                "autostart_reason": autostart_status.reason,
+            },
         }
+
+    @app.get("/api/autostart")
+    def autostart_status() -> dict[str, Any]:
+        status = autostart.status()
+        return status.__dict__
+
+    @app.post("/api/autostart/enable")
+    def autostart_enable() -> dict[str, Any]:
+        return autostart.enable().__dict__
+
+    @app.post("/api/autostart/disable")
+    def autostart_disable() -> dict[str, Any]:
+        return autostart.disable().__dict__
 
     @app.post("/api/start")
     def start() -> dict[str, Any]:
@@ -123,18 +150,44 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         try:
             return context.recorder.record_once()
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=500, detail=describe_runtime_error(exc)) from exc
 
     @app.get("/api/timeline/today")
-    def today_timeline() -> dict[str, Any]:
-        today = datetime.now().date()
-        items = merge_events(context.store.load_effective(today))
-        return {"date": today.isoformat(), "items": [item.to_dict() for item in items]}
+    def today_timeline(day: str | None = Query(default=None)) -> dict[str, Any]:
+        target_day = parse_day(day)
+        items = merge_events(context.store.load_effective(target_day))
+        return {"date": target_day.isoformat(), "items": [item.to_dict() for item in items]}
 
     @app.get("/api/review")
-    def review_list() -> dict[str, Any]:
-        today = datetime.now().date()
-        return {"date": today.isoformat(), "items": context.store.load_review(today)}
+    def review_list(day: str | None = Query(default=None)) -> dict[str, Any]:
+        target_day = parse_day(day)
+        return {"date": target_day.isoformat(), "items": context.store.load_review(target_day)}
+
+    @app.post("/api/review/bulk/work")
+    def review_bulk_work(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+        payload = payload or {}
+        ids = normalize_id_list(payload.get("ids"))
+        target_day = parse_day(payload.get("date"))
+        moved, remaining = split_review_items(context.store.load_review(target_day), ids)
+        for event in moved:
+            classification = dict(event.get("classification", {}))
+            classification["should_record"] = True
+            classification["is_work"] = True
+            classification["need_review"] = False
+            classification["skip_reason"] = None
+            event["classification"] = classification
+            context.store.append_effective(event, target_day)
+        context.store.replace_review(target_day, remaining)
+        return {"marked": "work", "count": len(moved), "date": target_day.isoformat()}
+
+    @app.post("/api/review/bulk/nonwork")
+    def review_bulk_nonwork(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
+        payload = payload or {}
+        ids = normalize_id_list(payload.get("ids"))
+        target_day = parse_day(payload.get("date"))
+        moved, remaining = split_review_items(context.store.load_review(target_day), ids)
+        context.store.replace_review(target_day, remaining)
+        return {"marked": "nonwork", "count": len(moved), "date": target_day.isoformat()}
 
     @app.post("/api/review/{event_id_prefix}/work")
     def review_mark_work(event_id_prefix: str) -> dict[str, Any]:
@@ -161,7 +214,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         try:
             path = context.reports.build_daily_report()
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=500, detail=describe_runtime_error(exc)) from exc
         return {"path": str(path)}
 
     @app.post("/api/reports/weekly")
@@ -169,7 +222,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         try:
             path = context.reports.build_weekly_report()
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            raise HTTPException(status_code=500, detail=describe_runtime_error(exc)) from exc
         return {"path": str(path)}
 
     @app.get("/api/reports/latest/{kind}")
@@ -187,14 +240,73 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "updated_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
         }
 
+    @app.put("/api/reports/latest/{kind}")
+    def save_latest_report(kind: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        path = latest_report_path(context.settings.storage.report_output_dir, kind, datetime.now())
+        if path is None:
+            raise HTTPException(status_code=404, detail=f"Unknown report kind: {kind}")
+        content = payload.get("content")
+        if not isinstance(content, str):
+            raise HTTPException(status_code=422, detail="content must be a string")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return {
+            "kind": kind,
+            "saved": True,
+            "path": str(path),
+            "updated_at": datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds"),
+        }
+
+    @app.get("/api/diagnostics")
+    def diagnostics() -> dict[str, Any]:
+        paths = {
+            "data_dir": context.settings.storage.data_dir,
+            "report_output_dir": context.settings.storage.report_output_dir,
+            "log_dir": context.settings.storage.log_dir,
+        }
+        today = datetime.now().date()
+        review_items = context.store.load_review(today)
+        effective_items = context.store.load_effective(today)
+        return {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "ocr": {
+                "url": context.settings.ocr.url,
+                "protocol": context.settings.ocr.protocol,
+                "consecutive_failures": context.recorder.consecutive_ocr_failures,
+            },
+            "llm": {
+                "base_url": context.settings.llm.base_url,
+                "model": context.settings.llm.model,
+            },
+            "storage": [
+                {
+                    "name": name,
+                    "path": str(path),
+                    "exists": path.exists(),
+                    "writable": is_writable_dir(path),
+                }
+                for name, path in paths.items()
+            ],
+            "events": {
+                "effective_today": len(effective_items),
+                "review_today": len(review_items),
+                "raw_today": len(context.store.load_raw(today)),
+            },
+            "desktop": autostart.status().__dict__,
+        }
+
     @app.post("/api/test/llm")
     def test_llm() -> dict[str, Any]:
         ok, message = context.llm.test_connection()
+        if not ok:
+            raise HTTPException(status_code=502, detail=describe_runtime_error(LLMError(message)))
         return {"ok": ok, "message": message}
 
     @app.post("/api/test/ocr")
     def test_ocr() -> dict[str, Any]:
         ok, message = context.ocr.test_connection()
+        if not ok:
+            raise HTTPException(status_code=502, detail=describe_runtime_error(OCRError(message)))
         return {"ok": ok, "message": message}
 
     return app
@@ -210,6 +322,53 @@ def latest_report_path(output_dir: Path, kind: str, now: datetime) -> Path | Non
     return None
 
 
+def parse_day(value: str | None) -> date:
+    if not value:
+        return datetime.now().date()
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="date must use YYYY-MM-DD")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="date must use YYYY-MM-DD") from exc
+
+
+def normalize_id_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise HTTPException(status_code=422, detail="ids must be a string array")
+    return value
+
+
+def split_review_items(items: list[dict[str, Any]], ids: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not items:
+        return [], []
+    if not ids:
+        return items, []
+
+    selected: list[dict[str, Any]] = []
+    remaining: list[dict[str, Any]] = []
+    for event in items:
+        event_id = str(event.get("id", ""))
+        if any(event_id.startswith(prefix) for prefix in ids):
+            selected.append(event)
+        else:
+            remaining.append(event)
+    return selected, remaining
+
+
+def is_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".worktrace-write-test"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
+
+
 def pop_review_item(context: AppContext, event_id_prefix: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     today = datetime.now().date()
     events = context.store.load_review(today)
@@ -221,3 +380,33 @@ def pop_review_item(context: AppContext, event_id_prefix: str) -> tuple[dict[str
     selected = matches[0]
     remaining = [event for event in events if event.get("id") != selected.get("id")]
     return selected, remaining
+
+
+def describe_runtime_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    lowered = message.lower()
+
+    if isinstance(exc, ConfigError) or "config file not found" in lowered:
+        return "未找到可用配置文件。请先复制并填写 config.yaml，再重新启动 WorkTrace。"
+
+    if "no effective work events found for daily report" in lowered:
+        return "今天还没有可用于生成日报的有效工作事件。请先记录一次，或在待确认列表中标记工作事件。"
+
+    if "no effective work events or daily reports found for weekly report" in lowered:
+        return "本周还没有可用于生成周报的日报或有效时间轴。请先记录工作事件并生成日报。"
+
+    if isinstance(exc, LLMError) or "llm request failed" in lowered:
+        if "401" in lowered or "unauthorized" in lowered:
+            return "LLM 服务认证失败，请检查 llm.api_key 或模型网关的鉴权配置。"
+        if "404" in lowered or "not found" in lowered:
+            return "LLM 服务地址或模型名称不可用，请检查 llm.base_url 和 llm.model。"
+        if "timed out" in lowered or "timeout" in lowered:
+            return "LLM 服务请求超时，请检查模型负载、网络连通性或 timeout_seconds 配置。"
+        return "LLM 服务调用失败，请检查模型服务状态和日志。"
+
+    if isinstance(exc, OCRError) or "ocr request failed" in lowered or "ocr endpoint unreachable" in lowered:
+        if "timed out" in lowered or "timeout" in lowered:
+            return "OCR 服务请求超时，请检查 OCR 服务状态、网络连通性或 timeout_seconds 配置。"
+        return "OCR 服务调用失败，请检查 OCR 地址、协议配置和服务状态。"
+
+    return message or "操作失败，请查看日志。"

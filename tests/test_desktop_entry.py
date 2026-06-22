@@ -19,7 +19,7 @@ class DesktopEntryTests(unittest.TestCase):
                 import os
 
                 os.chdir(root)
-                self.assertEqual(default_desktop_config_path(), Path("config.yaml"))
+                self.assertEqual(default_desktop_config_path(), (root / "config.yaml").resolve())
             finally:
                 import os
 
@@ -34,7 +34,7 @@ class DesktopEntryTests(unittest.TestCase):
                 import os
 
                 os.chdir(root)
-                self.assertEqual(default_desktop_config_path(), Path("config.lan.example.yaml"))
+                self.assertEqual(default_desktop_config_path(), (root / "config.lan.example.yaml").resolve())
             finally:
                 import os
 

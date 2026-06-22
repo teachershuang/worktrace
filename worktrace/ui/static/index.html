@@ -17,28 +17,35 @@
           <p>本地日报生成助手</p>
         </div>
       </div>
+
       <nav class="nav-list" aria-label="主导航">
         <a class="nav-item is-active" href="#overview" aria-current="page">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></svg></span><span>今日概览</span>
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></svg></span>
+          <span>今日概览</span>
         </a>
         <a class="nav-item" href="#timeline">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span>时间轴</span>
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <span>时间轴</span>
         </a>
         <a class="nav-item" href="#reports">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h4"/><path d="M10 13h5"/><path d="M10 17h5"/></svg></span><span>报告</span>
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h4"/><path d="M10 13h5"/><path d="M10 17h5"/></svg></span>
+          <span>报告</span>
         </a>
         <a class="nav-item" href="#review">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.6 2.6 0 0 1 5 1c0 1.8-2.1 2.2-2.4 3.8"/><path d="M12 17.5h.01"/></svg></span><span>待确认</span>
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.6 2.6 0 0 1 5 1c0 1.8-2.1 2.2-2.4 3.8"/><path d="M12 17.5h.01"/></svg></span>
+          <span>待确认</span>
         </a>
         <a class="nav-item" href="#settings">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 13.5v-3l2.2-.7.8-1.9-1-2 2.1-2.1 2 1 1.9-.8L12.5 2h3l.7 2.2 1.9.8 2-1 2.1 2.1-1 2 .8 1.9 2.2.7v3l-2.2.7-.8 1.9 1 2-2.1 2.1-2-1-1.9.8-.7 2.2h-3l-.7-2.2-1.9-.8-2 1-2.1-2.1 1-2-.8-1.9z"/></svg></span><span>配置</span>
+          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 13.5v-3l2.2-.7.8-1.9-1-2 2.1-2.1 2 1 1.9-.8L12.5 2h3l.7 2.2 1.9.8 2-1 2.1 2.1-1 2 .8 1.9 2.2.7v3l-2.2.7-.8 1.9 1 2-2.1 2.1-2-1-1.9.8-.7 2.2h-3l-.7-2.2-1.9-.8-2 1-2.1-2.1 1-2-.8-1.9z"/></svg></span>
+          <span>配置</span>
         </a>
       </nav>
+
       <div class="assistant-card">
         <img src="/static/assets/mascot/assistant-sidebar.png" alt="记录助手" />
         <div class="recording-dot"></div>
         <strong id="side-status">状态读取中</strong>
-        <small>v0.1.0</small>
+        <small>v0.2.0</small>
       </div>
     </aside>
 
@@ -53,7 +60,8 @@
           <button class="button ghost" data-action="test-ocr">测试 OCR</button>
           <button class="button ghost" data-action="test-llm">测试 LLM</button>
           <button class="button primary" data-action="record-once">
-            <span class="button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h4l1.5-2h5L16 7h4v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>立即记录一次
+            <span class="button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h4l1.5-2h5L16 7h4v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
+            立即记录一次
           </button>
         </div>
       </header>
@@ -114,13 +122,24 @@
             <span style="width: 36%"></span>
           </div>
           <div class="time-scale">
-            <span>09:00</span><span>12:00</span><span>13:30</span><span>18:00</span>
+            <span>09:00</span>
+            <span>12:00</span>
+            <span>13:30</span>
+            <span>18:00</span>
           </div>
           <div class="legend">
             <span><b class="green"></b>工作时段</span>
             <span><b class="gray"></b>休息时段</span>
           </div>
         </article>
+      </section>
+
+      <section class="panel diagnostics-panel" id="diagnostics">
+        <div class="panel-heading">
+          <h3>运行诊断</h3>
+          <button class="text-button" data-action="refresh-diagnostics">刷新诊断</button>
+        </div>
+        <div class="diagnostics-grid" id="diagnostics-grid"></div>
       </section>
 
       <section class="content-grid">
@@ -148,6 +167,14 @@
           </div>
           <div class="log-box" id="log" aria-live="polite">准备就绪</div>
           <pre class="report-preview" id="report-preview">尚未生成今日报告</pre>
+          <div class="report-editor">
+            <div class="button-row">
+              <button class="quick-button" data-action="edit-daily">编辑日报</button>
+              <button class="quick-button" data-action="edit-weekly">编辑周报</button>
+              <button class="quick-button" data-action="save-report">保存当前报告</button>
+            </div>
+            <textarea id="report-editor" spellcheck="false" placeholder="选择日报或周报后可在这里二次编辑。"></textarea>
+          </div>
         </article>
       </section>
 
@@ -155,6 +182,13 @@
         <div class="panel-heading">
           <h3>待确认事件</h3>
           <span class="muted">低置信度内容不会直接进入日报</span>
+        </div>
+        <div class="review-toolbar">
+          <input id="review-date" type="date" aria-label="待确认日期" />
+          <input id="review-search" type="search" placeholder="搜索标题、摘要或项目" aria-label="搜索待确认事件" />
+          <button class="quick-button" data-action="review-select-all">全选</button>
+          <button class="quick-button" data-action="review-bulk-work">批量标记工作</button>
+          <button class="quick-button danger" data-action="review-bulk-nonwork">批量标记非工作</button>
         </div>
         <div class="review-table" id="review-list"></div>
       </section>
@@ -164,10 +198,12 @@
           <h3>当前配置</h3>
           <span class="muted">只读摘要，修改请编辑配置文件后重启</span>
         </div>
+        <div class="desktop-actions" id="desktop-actions"></div>
         <div class="settings-grid" id="settings-grid"></div>
       </section>
     </main>
   </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

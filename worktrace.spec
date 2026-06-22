@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 
 ROOT = Path(SPECPATH)
+ICON_PATH = str(ROOT / "worktrace.ico")
 
 datas = [
     (str(ROOT / "prompts"), "prompts"),
@@ -52,6 +53,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=ICON_PATH,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -69,6 +71,7 @@ cli_exe = EXE(
     strip=False,
     upx=True,
     console=True,
+    icon=ICON_PATH,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

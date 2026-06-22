@@ -13,6 +13,7 @@ from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.ui.api import create_app
 
 logger = logging.getLogger(__name__)
+STATIC_ASSETS = Path(__file__).resolve().parent / "static" / "assets"
 
 
 class TrayRuntime:
@@ -121,6 +122,10 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
 
 
 def create_tray_icon() -> Image.Image:
+    icon_path = STATIC_ASSETS / "icons" / "app-tray.png"
+    if icon_path.exists():
+        return Image.open(icon_path).convert("RGBA")
+
     size = 64
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import platform
+import sys
 import webbrowser
 from pathlib import Path
 
@@ -11,10 +12,12 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 
+from worktrace import __version__
 from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError, load_config
 from worktrace.llm.client import LLMClient
 from worktrace.ocr.client import OCRClient
+from worktrace.runtime.autostart import AutostartManager
 from worktrace.runtime.app_context import build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.timeline.merge import merge_events
@@ -24,7 +27,7 @@ from worktrace.ui.native import launch_native_window
 from worktrace.ui.tray import run_tray
 
 
-app = typer.Typer(help="WorkTrace local daily report assistant.")
+app = typer.Typer(help=f"WorkTrace v{__version__} local daily report assistant.")
 console = Console()
 
 
@@ -39,14 +42,26 @@ def load_settings_or_exit(config: Path, verbose: bool = False):
 
 
 def default_desktop_config_path() -> Path:
-    for candidate in (
-        Path("config.yaml"),
-        Path("config.lan.example.yaml"),
-        Path("config.example.yaml"),
-    ):
-        if candidate.exists():
-            return candidate
-    return Path("config.yaml")
+    names = ("config.yaml", "config.lan.example.yaml", "config.example.yaml")
+    search_roots: list[Path] = []
+
+    if getattr(sys, "frozen", False):
+        search_roots.append(Path(sys.executable).resolve().parent)
+
+    search_roots.append(Path.cwd())
+    search_roots.append(Path(__file__).resolve().parents[2])
+
+    seen: set[Path] = set()
+    for root in search_roots:
+        resolved_root = root.resolve()
+        if resolved_root in seen:
+            continue
+        seen.add(resolved_root)
+        for name in names:
+            candidate = resolved_root / name
+            if candidate.exists():
+                return candidate
+    return (search_roots[0] / "config.yaml").resolve()
 
 
 def launch_desktop(
@@ -169,6 +184,8 @@ def doctor(
     if platform.system() == "Windows":
         for module in ("win32gui", "win32process", "psutil", "pythonnet", "clr_loader", "clr"):
             add(f"windows:{module}", module_available(module), "available" if module_available(module) else "missing")
+        autostart_status = AutostartManager(config).status()
+        add("windows:autostart", autostart_status.supported, autostart_status.startup_file or "unsupported")
     else:
         add("active_window", True, "non-Windows platforms use metadata fallback")
 
@@ -424,6 +441,48 @@ def desktop(
 ) -> None:
     """Run WorkTrace in desktop window mode with browser fallback."""
     launch_desktop(config=config, host=host, port=port, verbose=verbose)
+
+
+@app.command("autostart-status")
+def autostart_status(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Show Windows autostart status for WorkTrace tray mode."""
+    status = AutostartManager(config).status()
+    table = Table(title="WorkTrace Autostart")
+    table.add_column("Key")
+    table.add_column("Value")
+    table.add_row("supported", str(status.supported))
+    table.add_row("enabled", str(status.enabled))
+    table.add_row("mode", status.mode)
+    table.add_row("startup_file", str(status.startup_file or "-"))
+    table.add_row("launch_command", str(status.launch_command or "-"))
+    table.add_row("reason", str(status.reason or "-"))
+    console.print(table)
+
+
+@app.command("autostart-enable")
+def autostart_enable(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Enable Windows startup entry that launches WorkTrace tray mode."""
+    status = AutostartManager(config).enable()
+    if not status.supported:
+        console.print(f"[red]Autostart unsupported:[/red] {status.reason}")
+        raise typer.Exit(code=1)
+    console.print(f"[green]Autostart enabled:[/green] {status.startup_file}")
+
+
+@app.command("autostart-disable")
+def autostart_disable(
+    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+) -> None:
+    """Disable Windows startup entry for WorkTrace."""
+    status = AutostartManager(config).disable()
+    if not status.supported:
+        console.print(f"[red]Autostart unsupported:[/red] {status.reason}")
+        raise typer.Exit(code=1)
+    console.print(f"[yellow]Autostart disabled:[/yellow] {status.startup_file}")
 
 
 def pop_review_item(store: EventStore, day, event_id_prefix: str):

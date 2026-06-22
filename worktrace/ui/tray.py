@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 import uvicorn
@@ -10,7 +11,9 @@ from PIL import Image, ImageDraw
 
 from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
+from worktrace.runtime.time_windows import is_within_work_periods
 from worktrace.ui.api import create_app
+from worktrace.ui.pet import DesktopPetView, DesktopPetWindow, select_pet_view
 
 logger = logging.getLogger(__name__)
 STATIC_ASSETS = Path(__file__).resolve().parent / "static" / "assets"
@@ -37,6 +40,9 @@ class TrayRuntime:
             loop = BackgroundRecorderLoop(self.context.settings, self.context.recorder, self.context.state_store)
             self._record_thread = threading.Thread(target=loop.run_forever, daemon=True, name="worktrace-recorder")
             self._record_thread.start()
+
+    def loop_running(self) -> bool:
+        return bool(self._record_thread and self._record_thread.is_alive())
 
     def pause(self) -> None:
         self.context.state_store.pause()
@@ -69,6 +75,17 @@ class TrayRuntime:
     def shutdown(self) -> None:
         self.context.state_store.request_stop()
 
+    def pet_view(self) -> DesktopPetView:
+        state = self.context.state_store.load()
+        review_count = len(self.context.store.load_review(datetime.now().date()))
+        in_work_period = is_within_work_periods(datetime.now(), self.context.settings.recording.parsed_periods())
+        return select_pet_view(
+            loop_running=self.loop_running(),
+            paused=state.paused,
+            review_count=review_count,
+            in_work_period=in_work_period,
+        )
+
     @staticmethod
     def _run_async(func, name: str) -> None:
         def run() -> None:
@@ -84,6 +101,8 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
     import pystray
 
     runtime = TrayRuntime(config_path=config_path, host=host, port=port, verbose=verbose)
+    icon_ref: dict[str, pystray.Icon] = {}
+    pet_ref: dict[str, DesktopPetWindow] = {}
 
     def action_start(icon, item) -> None:
         runtime.start_recording()
@@ -105,6 +124,9 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
 
     def action_quit(icon, item) -> None:
         runtime.shutdown()
+        pet = pet_ref.get("pet")
+        if pet is not None:
+            pet.close()
         icon.stop()
 
     menu = pystray.Menu(
@@ -118,7 +140,21 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
         pystray.MenuItem("退出", action_quit),
     )
     icon = pystray.Icon("WorkTrace", create_tray_icon(), "WorkTrace", menu)
-    icon.run()
+    icon_ref["icon"] = icon
+    icon.run_detached()
+
+    pet = DesktopPetWindow(
+        data_dir=runtime.context.settings.storage.data_dir,
+        fetch_view=runtime.pet_view,
+        open_console=runtime.open_console,
+        on_quit=lambda: action_quit(icon_ref["icon"], None),
+    )
+    pet_ref["pet"] = pet
+    try:
+        pet.run()
+    finally:
+        runtime.shutdown()
+        icon.stop()
 
 
 def create_tray_icon() -> Image.Image:

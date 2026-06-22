@@ -31,6 +31,7 @@ Copy-Item config.example.yaml config.yaml
 
 `dist/WorkTrace/WorkTrace.exe` 是命令行入口，支持与 `python main.py` 相同的子命令。发行目录根部会复制 `config.example.yaml` 和 `config.lan.example.yaml`，真实使用时复制为 `config.yaml` 并填入本地服务地址和 API Key。
 配置中的相对 `data_dir`、`report_output_dir` 和 `log_dir` 会按配置文件所在目录解析，因此发行包默认会把数据、报告和日志写入 `dist/WorkTrace/data` 与 `dist/WorkTrace/logs`。
+直接双击 `WorkTrace.exe` 时，程序会按桌面模式启动：优先使用同目录 `config.yaml`，如果不存在则回退到 `config.lan.example.yaml` 或 `config.example.yaml`，并自动打开本地控制台；如果配置里 `recording.enable_tray=true`，则会改为启动系统托盘。
 
 编辑 `config.yaml`：
 

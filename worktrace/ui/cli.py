@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import platform
+import threading
+import time
+import webbrowser
 from pathlib import Path
 
 import typer
@@ -34,6 +37,41 @@ def load_settings_or_exit(config: Path, verbose: bool = False):
     except ConfigError as exc:
         console.print(f"[red]Config error:[/red] {exc}")
         raise typer.Exit(code=1) from exc
+
+
+def default_desktop_config_path() -> Path:
+    for candidate in (
+        Path("config.yaml"),
+        Path("config.lan.example.yaml"),
+        Path("config.example.yaml"),
+    ):
+        if candidate.exists():
+            return candidate
+    return Path("config.yaml")
+
+
+def launch_desktop(
+    config: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    verbose: bool = False,
+) -> None:
+    config_path = config or default_desktop_config_path()
+    settings = load_settings_or_exit(config_path, verbose=verbose)
+
+    if settings.recording.enable_tray:
+        run_tray(config_path=config_path, host=host, port=port, verbose=verbose)
+        return
+
+    def open_console_later() -> None:
+        time.sleep(1.2)
+        webbrowser.open(f"http://{host}:{port}")
+
+    threading.Thread(target=open_console_later, daemon=True, name="worktrace-open-browser").start()
+    app_instance = create_app(config_path, verbose=verbose)
+    console.print(f"[green]WorkTrace desktop:[/green] http://{host}:{port}")
+    console.print(f"[cyan]Config:[/cyan] {config_path}")
+    uvicorn.run(app_instance, host=host, port=port, log_level="info")
 
 
 @app.command("config-show")

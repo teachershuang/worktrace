@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import platform
+import shutil
 import sys
 import webbrowser
 from pathlib import Path
@@ -29,6 +30,8 @@ from worktrace.ui.tray import run_tray
 
 app = typer.Typer(help=f"WorkTrace v{__version__} local daily report assistant.")
 console = Console()
+DESKTOP_CONFIG_NAME = "config.yaml"
+DESKTOP_CONFIG_EXAMPLES = ("config.example.yaml", "config.lan.example.yaml")
 
 
 def load_settings_or_exit(config: Path, verbose: bool = False):
@@ -42,26 +45,54 @@ def load_settings_or_exit(config: Path, verbose: bool = False):
 
 
 def default_desktop_config_path() -> Path:
-    names = ("config.yaml", "config.lan.example.yaml", "config.example.yaml")
     search_roots: list[Path] = []
+    frozen = getattr(sys, "frozen", False)
 
-    if getattr(sys, "frozen", False):
-        search_roots.append(Path(sys.executable).resolve().parent)
+    if frozen:
+        executable_dir = Path(sys.executable).resolve().parent
+        search_roots.append(executable_dir)
+        search_roots.append(executable_dir / "_internal")
 
     search_roots.append(Path.cwd())
     search_roots.append(Path(__file__).resolve().parents[2])
 
     seen: set[Path] = set()
+    unique_roots: list[Path] = []
     for root in search_roots:
         resolved_root = root.resolve()
         if resolved_root in seen:
             continue
         seen.add(resolved_root)
-        for name in names:
-            candidate = resolved_root / name
+        unique_roots.append(resolved_root)
+
+    for root in unique_roots:
+        candidate = root / DESKTOP_CONFIG_NAME
+        if candidate.exists():
+            return candidate
+
+    if frozen:
+        return materialize_desktop_config(unique_roots)
+
+    for root in unique_roots:
+        for name in ("config.lan.example.yaml", "config.example.yaml"):
+            candidate = root / name
             if candidate.exists():
                 return candidate
-    return (search_roots[0] / "config.yaml").resolve()
+    return (unique_roots[0] / DESKTOP_CONFIG_NAME).resolve()
+
+
+def materialize_desktop_config(search_roots: list[Path]) -> Path:
+    target = search_roots[0] / DESKTOP_CONFIG_NAME
+    if target.exists():
+        return target
+
+    for root in search_roots:
+        for name in DESKTOP_CONFIG_EXAMPLES:
+            source = root / name
+            if source.exists():
+                shutil.copyfile(source, target)
+                return target
+    return target
 
 
 def launch_desktop(
@@ -419,14 +450,14 @@ def run_console(
 
 @app.command("tray")
 def tray(
-    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to config YAML."),
     host: str = typer.Option("127.0.0.1", "--host", help="Console host used by tray."),
     port: int = typer.Option(8765, "--port", help="Console port used by tray."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Run WorkTrace from the system tray."""
     try:
-        run_tray(config_path=config, host=host, port=port, verbose=verbose)
+        run_tray(config_path=config or default_desktop_config_path(), host=host, port=port, verbose=verbose)
     except ImportError as exc:
         console.print(f"[red]Tray dependencies missing:[/red] {exc}")
         raise typer.Exit(code=1) from exc
@@ -434,7 +465,7 @@ def tray(
 
 @app.command("desktop")
 def desktop(
-    config: Path = typer.Option(Path("config.yaml"), "--config", "-c", help="Path to config YAML."),
+    config: Path | None = typer.Option(None, "--config", "-c", help="Path to config YAML."),
     host: str = typer.Option("127.0.0.1", "--host", help="Desktop host."),
     port: int = typer.Option(8765, "--port", help="Desktop port."),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),

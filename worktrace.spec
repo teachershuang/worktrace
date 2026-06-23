@@ -26,6 +26,25 @@ hiddenimports += collect_submodules("pythonnet")
 hiddenimports += collect_submodules("clr_loader")
 hiddenimports += collect_submodules("proxy_tools")
 
+excludes = [
+    "alabaster",
+    "docutils",
+    "IPython",
+    "jupyter",
+    "matplotlib",
+    "notebook",
+    "numpy.f2py",
+    "pandas",
+    "pip",
+    "pytest",
+    "scipy",
+    "setuptools.tests",
+    "sphinx",
+    "tkinter.test",
+    "unittest.test",
+    "wheel",
+]
+
 
 a = Analysis(
     ["main.py"],
@@ -36,7 +55,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     noarchive=False,
     optimize=0,
 )

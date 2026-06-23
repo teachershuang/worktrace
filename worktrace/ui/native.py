@@ -14,6 +14,11 @@ from worktrace.ui.api import create_app
 
 logger = logging.getLogger(__name__)
 
+DESKTOP_WINDOW_WIDTH = 960
+DESKTOP_WINDOW_HEIGHT = 680
+DESKTOP_WINDOW_MIN_WIDTH = 720
+DESKTOP_WINDOW_MIN_HEIGHT = 520
+
 
 @dataclass
 class LocalServerHandle:
@@ -43,9 +48,9 @@ def launch_native_window(
     window = webview.create_window(
         "WorkTrace",
         html=loading_html(),
-        width=1440,
-        height=920,
-        min_size=(1100, 760),
+        width=DESKTOP_WINDOW_WIDTH,
+        height=DESKTOP_WINDOW_HEIGHT,
+        min_size=(DESKTOP_WINDOW_MIN_WIDTH, DESKTOP_WINDOW_MIN_HEIGHT),
         background_color="#FFF8F2",
         text_select=True,
         confirm_close=True,

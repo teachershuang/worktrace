@@ -9,10 +9,12 @@ from pathlib import Path
 
 import httpx
 import uvicorn
+from PIL import Image, ImageDraw
 
 from worktrace.ui.api import create_app
 
 logger = logging.getLogger(__name__)
+STATIC_ASSETS = Path(__file__).resolve().parent / "static" / "assets"
 
 DESKTOP_WINDOW_WIDTH = 960
 DESKTOP_WINDOW_HEIGHT = 680
@@ -36,6 +38,31 @@ class LocalServerHandle:
         self.thread.join(timeout=5)
 
 
+class NativeWindowLifecycle:
+    def __init__(self, window, server_handle: LocalServerHandle):
+        self.window = window
+        self.server_handle = server_handle
+        self.exiting = False
+
+    def hide_to_tray(self) -> bool:
+        if self.exiting:
+            return True
+        logger.info("desktop window close requested; hiding to tray")
+        self.window.hide()
+        return False
+
+    def show_window(self) -> None:
+        self.window.show()
+        self.window.restore()
+
+    def exit_app(self) -> None:
+        self.exiting = True
+        self.window.destroy()
+
+    def cleanup(self) -> None:
+        self.server_handle.stop()
+
+
 def launch_native_window(
     config_path: Path,
     host: str = "127.0.0.1",
@@ -53,17 +80,67 @@ def launch_native_window(
         min_size=(DESKTOP_WINDOW_MIN_WIDTH, DESKTOP_WINDOW_MIN_HEIGHT),
         background_color="#FFF8F2",
         text_select=True,
-        confirm_close=True,
+        confirm_close=False,
     )
+    lifecycle = NativeWindowLifecycle(window, server_handle)
+    tray_icon = create_native_tray_icon(lifecycle)
 
     def on_closed() -> None:
-        server_handle.stop()
+        lifecycle.cleanup()
 
     def bootstrap(target_window) -> None:
+        if tray_icon is not None:
+            tray_icon.run_detached()
         target_window.load_url(server_handle.url)
 
+    if tray_icon is not None:
+        window.events.closing += lifecycle.hide_to_tray
     window.events.closed += on_closed
-    webview.start(bootstrap, window, debug=verbose)
+    try:
+        webview.start(bootstrap, window, debug=verbose)
+    finally:
+        if tray_icon is not None:
+            tray_icon.stop()
+
+
+def create_native_tray_icon(lifecycle: NativeWindowLifecycle):
+    try:
+        import pystray
+    except ImportError:
+        logger.warning("pystray unavailable; desktop close-to-tray disabled")
+        return None
+
+    def show(icon, item) -> None:
+        lifecycle.show_window()
+
+    def open_console(icon, item) -> None:
+        lifecycle.show_window()
+
+    def exit_app(icon, item) -> None:
+        lifecycle.exit_app()
+        icon.stop()
+
+    menu = pystray.Menu(
+        pystray.MenuItem("显示 WorkTrace", show, default=True),
+        pystray.MenuItem("打开控制台", open_console),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("退出", exit_app),
+    )
+    return pystray.Icon("WorkTrace", create_native_tray_image(), "WorkTrace", menu)
+
+
+def create_native_tray_image() -> Image.Image:
+    icon_path = STATIC_ASSETS / "icons" / "app-tray.png"
+    if icon_path.exists():
+        return Image.open(icon_path).convert("RGBA")
+
+    size = 64
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((6, 6, 58, 58), radius=12, fill=(30, 111, 92, 255))
+    draw.line((18, 24, 30, 38, 48, 18), fill=(255, 253, 247, 255), width=6, joint="curve")
+    draw.line((18, 44, 46, 44), fill=(255, 253, 247, 230), width=4)
+    return image
 
 
 def start_local_server(

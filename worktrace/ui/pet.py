@@ -27,6 +27,42 @@ class DesktopPetView:
     asset_size: int
 
 
+@dataclass(frozen=True)
+class DesktopPetStatus:
+    view: DesktopPetView
+    loop_running: bool
+    paused: bool
+    review_count: int
+    in_work_period: bool
+
+    @property
+    def headline(self) -> str:
+        if self.paused:
+            return "已暂停"
+        if self.loop_running:
+            return "后台记录中"
+        if self.in_work_period:
+            return "工作时段待命"
+        return "休息时段"
+
+    @property
+    def detail(self) -> str:
+        review = f"{self.review_count} 条待确认" if self.review_count else "暂无待确认"
+        period = "工作时段内" if self.in_work_period else "非工作时段"
+        return f"{period} · {review}"
+
+
+@dataclass(frozen=True)
+class DesktopPetActions:
+    start_recording: Callable[[], None]
+    pause_recording: Callable[[], None]
+    resume_recording: Callable[[], None]
+    record_once: Callable[[], None]
+    generate_daily_report: Callable[[], None]
+    open_console: Callable[[], None]
+    quit_app: Callable[[], None]
+
+
 class DesktopPetPreferencesStore:
     def __init__(self, path: Path):
         self.path = path
@@ -99,18 +135,37 @@ def select_pet_view(
     )
 
 
+def build_pet_status(
+    *,
+    loop_running: bool,
+    paused: bool,
+    review_count: int,
+    in_work_period: bool,
+) -> DesktopPetStatus:
+    return DesktopPetStatus(
+        view=select_pet_view(
+            loop_running=loop_running,
+            paused=paused,
+            review_count=review_count,
+            in_work_period=in_work_period,
+        ),
+        loop_running=loop_running,
+        paused=paused,
+        review_count=review_count,
+        in_work_period=in_work_period,
+    )
+
+
 class DesktopPetWindow:
     def __init__(
         self,
         *,
         data_dir: Path,
-        fetch_view: Callable[[], DesktopPetView],
-        open_console: Callable[[], None],
-        on_quit: Callable[[], None],
+        fetch_status: Callable[[], DesktopPetStatus],
+        actions: DesktopPetActions,
     ):
-        self.fetch_view = fetch_view
-        self.open_console = open_console
-        self.on_quit = on_quit
+        self.fetch_status = fetch_status
+        self.actions = actions
         self.preferences_store = DesktopPetPreferencesStore(data_dir / "desktop_pet.json")
         self.preferences = self.preferences_store.load()
 
@@ -138,6 +193,7 @@ class DesktopPetWindow:
         self._drag_moved = False
         self._after_id: str | None = None
         self._closed = False
+        self._panel: tk.Toplevel | None = None
 
         self.canvas.bind("<ButtonPress-1>", self._on_press)
         self.canvas.bind("<B1-Motion>", self._on_drag)
@@ -145,8 +201,10 @@ class DesktopPetWindow:
         self.canvas.bind("<Button-3>", self._on_right_click)
 
         self.menu = tk.Menu(self.root, tearoff=False)
-        self.menu.add_command(label="打开控制台", command=self._menu_open_console)
-        self.menu.add_command(label="退出 WorkTrace", command=self._menu_quit)
+        self.menu.add_command(label="打开快捷面板", command=self.toggle_panel)
+        self.menu.add_command(label="打开控制台", command=self.actions.open_console)
+        self.menu.add_separator()
+        self.menu.add_command(label="退出 WorkTrace", command=self.actions.quit_app)
 
     def run(self) -> None:
         self.root.geometry(f"+{self.preferences.x}+{self.preferences.y}")
@@ -161,6 +219,7 @@ class DesktopPetWindow:
         if self._after_id:
             self.root.after_cancel(self._after_id)
             self._after_id = None
+        self._destroy_panel()
         try:
             self.root.destroy()
         except tk.TclError:
@@ -169,9 +228,24 @@ class DesktopPetWindow:
     def refresh(self) -> None:
         if self._closed:
             return
-        view = self.fetch_view()
-        self._render(view)
+        status = self.fetch_status()
+        self._render(status.view)
+        if self._panel and self._panel.winfo_exists():
+            self._render_panel(status)
         self._after_id = self.root.after(2500, self.refresh)
+
+    def toggle_panel(self) -> None:
+        if self._panel and self._panel.winfo_exists():
+            self._destroy_panel()
+            return
+        self._panel = tk.Toplevel(self.root)
+        self._panel.overrideredirect(True)
+        self._panel.attributes("-topmost", True)
+        self._panel.configure(bg="#FFF8EF")
+        self._position_panel()
+        self._render_panel(self.fetch_status())
+        self._panel.bind("<FocusOut>", lambda _event: self._destroy_panel())
+        self._panel.focus_force()
 
     def _render(self, view: DesktopPetView) -> None:
         asset_path = STATIC_ASSETS / "mascot" / view.asset_name
@@ -188,6 +262,109 @@ class DesktopPetWindow:
             x=84,
             y=140,
         )
+
+    def _render_panel(self, status: DesktopPetStatus) -> None:
+        if not self._panel:
+            return
+        for child in self._panel.winfo_children():
+            child.destroy()
+
+        frame = tk.Frame(
+            self._panel,
+            bg="#FFF8EF",
+            highlightbackground="#E8D3BA",
+            highlightthickness=1,
+            padx=14,
+            pady=12,
+        )
+        frame.pack(fill="both", expand=True)
+
+        title = tk.Label(
+            frame,
+            text=status.headline,
+            bg="#FFF8EF",
+            fg="#2D241D",
+            font=("Microsoft YaHei UI", 11, "bold"),
+            anchor="w",
+        )
+        title.pack(fill="x")
+
+        detail = tk.Label(
+            frame,
+            text=status.detail,
+            bg="#FFF8EF",
+            fg="#76695E",
+            font=("Microsoft YaHei UI", 9),
+            anchor="w",
+        )
+        detail.pack(fill="x", pady=(2, 10))
+
+        self._add_button(frame, "开始记录", self._run_panel_action(self.actions.start_recording), disabled=status.loop_running)
+        self._add_button(frame, "暂停", self._run_panel_action(self.actions.pause_recording), disabled=not status.loop_running or status.paused)
+        self._add_button(frame, "恢复", self._run_panel_action(self.actions.resume_recording), disabled=not status.paused)
+        self._add_button(frame, "立即记录一次", self._run_panel_action(self.actions.record_once))
+        self._add_button(frame, "生成今日日报", self._run_panel_action(self.actions.generate_daily_report))
+        self._add_button(frame, "打开控制台", self._run_panel_action(self.actions.open_console))
+        self._add_button(frame, "退出 WorkTrace", self.actions.quit_app, danger=True)
+
+    def _add_button(
+        self,
+        parent: tk.Frame,
+        text: str,
+        command: Callable[[], None],
+        *,
+        disabled: bool = False,
+        danger: bool = False,
+    ) -> None:
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            state="disabled" if disabled else "normal",
+            bg="#FFE9D2" if not danger else "#FFE2DE",
+            activebackground="#F9D8B7" if not danger else "#F6C9C2",
+            fg="#2D241D" if not danger else "#98352F",
+            disabledforeground="#A99B8E",
+            relief="flat",
+            bd=0,
+            cursor="hand2",
+            font=("Microsoft YaHei UI", 9, "bold"),
+            padx=10,
+            pady=6,
+        )
+        button.pack(fill="x", pady=(0, 6))
+
+    def _run_panel_action(self, action: Callable[[], None]) -> Callable[[], None]:
+        def run() -> None:
+            action()
+            self.root.after(300, self.refresh)
+
+        return run
+
+    def _position_panel(self) -> None:
+        if not self._panel:
+            return
+        self.root.update_idletasks()
+        screen_width = self.root.winfo_screenwidth()
+        panel_width = 196
+        panel_height = 334
+        pet_x = self.root.winfo_x()
+        pet_y = self.root.winfo_y()
+
+        x = pet_x + 142
+        if x + panel_width > screen_width:
+            x = max(8, pet_x - panel_width + 18)
+        y = max(8, pet_y + 10)
+        self._panel.geometry(f"{panel_width}x{panel_height}+{x}+{y}")
+
+    def _destroy_panel(self) -> None:
+        if not self._panel:
+            return
+        try:
+            self._panel.destroy()
+        except tk.TclError:
+            pass
+        self._panel = None
 
     def _draw_badge(self, *, text: str, fill: str, text_fill: str, x: int, y: int) -> None:
         width = max(78, 24 + len(text) * 12)
@@ -223,21 +400,17 @@ class DesktopPetWindow:
         if abs(dx) > 3 or abs(dy) > 3:
             self._drag_moved = True
         self.root.geometry(f"+{self._window_origin[0] + dx}+{self._window_origin[1] + dy}")
+        if self._panel and self._panel.winfo_exists():
+            self._position_panel()
 
     def _on_release(self, _event) -> None:
         if self._drag_moved:
             self.preferences = DesktopPetPreferences(x=self.root.winfo_x(), y=self.root.winfo_y())
             self.preferences_store.save(self.preferences)
         else:
-            self.open_console()
+            self.toggle_panel()
         self._drag_origin = None
         self._window_origin = None
 
     def _on_right_click(self, event) -> None:
         self.menu.tk_popup(event.x_root, event.y_root)
-
-    def _menu_open_console(self) -> None:
-        self.open_console()
-
-    def _menu_quit(self) -> None:
-        self.on_quit()

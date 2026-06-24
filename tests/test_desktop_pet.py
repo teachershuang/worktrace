@@ -7,6 +7,7 @@ from pathlib import Path
 from worktrace.ui.pet import (
     DesktopPetPreferences,
     DesktopPetPreferencesStore,
+    build_pet_status,
     select_pet_view,
 )
 
@@ -40,6 +41,18 @@ class DesktopPetTests(unittest.TestCase):
         )
         self.assertEqual(view.badge_text, "暂停中")
         self.assertEqual(view.asset_name, "assistant-rest.png")
+
+    def test_build_pet_status_summarizes_current_state(self) -> None:
+        status = build_pet_status(
+            loop_running=True,
+            paused=False,
+            review_count=2,
+            in_work_period=True,
+        )
+
+        self.assertEqual(status.headline, "后台记录中")
+        self.assertEqual(status.detail, "工作时段内 · 2 条待确认")
+        self.assertEqual(status.view.badge_text, "待确认 2")
 
 
 if __name__ == "__main__":

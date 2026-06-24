@@ -13,7 +13,7 @@ from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.time_windows import is_within_work_periods
 from worktrace.ui.api import create_app
-from worktrace.ui.pet import DesktopPetView, DesktopPetWindow, select_pet_view
+from worktrace.ui.pet import DesktopPetActions, DesktopPetStatus, DesktopPetWindow, build_pet_status
 
 logger = logging.getLogger(__name__)
 STATIC_ASSETS = Path(__file__).resolve().parent / "static" / "assets"
@@ -75,11 +75,11 @@ class TrayRuntime:
     def shutdown(self) -> None:
         self.context.state_store.request_stop()
 
-    def pet_view(self) -> DesktopPetView:
+    def pet_status(self) -> DesktopPetStatus:
         state = self.context.state_store.load()
         review_count = len(self.context.store.load_review(datetime.now().date()))
         in_work_period = is_within_work_periods(datetime.now(), self.context.settings.recording.parsed_periods())
-        return select_pet_view(
+        return build_pet_status(
             loop_running=self.loop_running(),
             paused=state.paused,
             review_count=review_count,
@@ -145,9 +145,16 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
 
     pet = DesktopPetWindow(
         data_dir=runtime.context.settings.storage.data_dir,
-        fetch_view=runtime.pet_view,
-        open_console=runtime.open_console,
-        on_quit=lambda: action_quit(icon_ref["icon"], None),
+        fetch_status=runtime.pet_status,
+        actions=DesktopPetActions(
+            start_recording=runtime.start_recording,
+            pause_recording=runtime.pause,
+            resume_recording=runtime.resume,
+            record_once=runtime.record_once,
+            generate_daily_report=runtime.generate_daily_report,
+            open_console=runtime.open_console,
+            quit_app=lambda: action_quit(icon_ref["icon"], None),
+        ),
     )
     pet_ref["pet"] = pet
     try:

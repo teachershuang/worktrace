@@ -50,6 +50,18 @@ class LLMClient:
             with httpx.Client(timeout=self.settings.timeout_seconds, trust_env=self.settings.trust_env) as client:
                 response = client.post(f"{self.base_url}/chat/completions", headers=headers, json=payload)
                 response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.exception("LLM request failed")
+            status_code = exc.response.status_code
+            if status_code == 401:
+                raise LLMError(
+                    "LLM service authentication failed: gateway is reachable, but the current llm.api_key was rejected."
+                ) from exc
+            if status_code == 404:
+                raise LLMError(
+                    "LLM service endpoint or model was not found. Check llm.base_url and llm.model."
+                ) from exc
+            raise LLMError(f"LLM request failed: HTTP {status_code}: {exc.response.text[:300]}") from exc
         except httpx.HTTPError as exc:
             logger.exception("LLM request failed")
             raise LLMError(f"LLM request failed: {exc}") from exc

@@ -12,6 +12,7 @@ from worktrace.classifier.activity import (
     decision_to_dict,
 )
 from worktrace.ocr.client import OCRClient, OCRError
+from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -24,11 +25,13 @@ class WorkRecorder:
         ocr: OCRClient,
         classifier: ActivityClassifier,
         store: EventStore,
+        state_store: RuntimeStateStore | None = None,
     ):
         self.capture = capture
         self.ocr = ocr
         self.classifier = classifier
         self.store = store
+        self.state_store = state_store
         self.consecutive_ocr_failures = 0
 
     def record_once(self) -> dict[str, Any]:
@@ -82,8 +85,27 @@ class WorkRecorder:
         raw_event = self.store.append_raw(event, now.date())
         if decision.need_review:
             self.store.append_review(raw_event, now.date())
+            self._mark_activity(
+                status="review",
+                reason=f"低置信度待确认：{decision.title or decision.skip_reason or '需要人工确认'}",
+                occurred_at=now.isoformat(timespec="seconds"),
+                event_id=str(raw_event.get("id", "")) or None,
+            )
         elif decision.should_record:
             self.store.append_effective(raw_event, now.date())
+            self._mark_activity(
+                status="recorded",
+                reason=decision.title or decision.summary or "已记录有效工作事件",
+                occurred_at=now.isoformat(timespec="seconds"),
+                event_id=str(raw_event.get("id", "")) or None,
+            )
+        else:
+            self._mark_activity(
+                status="skipped",
+                reason=decision.skip_reason or decision.title or "未达到记录条件",
+                occurred_at=now.isoformat(timespec="seconds"),
+                event_id=str(raw_event.get("id", "")) or None,
+            )
 
         logger.info(
             "recorded event should_record=%s need_review=%s confidence=%.2f title=%s",
@@ -93,6 +115,16 @@ class WorkRecorder:
             decision.title,
         )
         return raw_event
+
+    def _mark_activity(self, *, status: str, reason: str, occurred_at: str, event_id: str | None = None) -> None:
+        if self.state_store is None:
+            return
+        self.state_store.mark_activity(
+            status=status,
+            reason=reason,
+            occurred_at=occurred_at,
+            event_id=event_id,
+        )
 
     def _previous_valid_event(self, now: datetime) -> dict[str, Any] | None:
         events = self.store.load_effective(now.date())

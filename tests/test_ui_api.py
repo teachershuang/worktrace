@@ -174,6 +174,7 @@ storage:
                 self.assertIn("ocr", payload)
                 self.assertIn("llm", payload)
                 self.assertIn("storage", payload)
+                self.assertIn("last_activity", payload)
                 self.assertEqual(payload["events"]["effective_today"], 0)
             finally:
                 logging.shutdown()
@@ -184,6 +185,26 @@ storage:
         )
         self.assertIn("LLM 服务认证失败", message)
         self.assertNotIn("chat/completions", message)
+
+
+    def test_status_endpoint_reports_last_activity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.get("/api/status")
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertIn("last_activity", payload)
+                self.assertEqual(
+                    sorted(payload["last_activity"].keys()),
+                    ["at", "event_id", "reason", "status"],
+                )
+            finally:
+                logging.shutdown()
 
 
 def write_test_config(root: Path) -> Path:

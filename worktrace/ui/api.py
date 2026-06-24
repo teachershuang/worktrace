@@ -73,6 +73,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "ocr_consecutive_failures": context.recorder.consecutive_ocr_failures,
             "idle_seconds": get_idle_seconds(),
             "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
+            "last_activity": runtime_state_payload(state),
         }
 
     @app.get("/api/config/summary")
@@ -292,6 +293,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "review_today": len(review_items),
                 "raw_today": len(context.store.load_raw(today)),
             },
+            "last_activity": runtime_state_payload(context.state_store.load()),
             "desktop": autostart.status().__dict__,
         }
 
@@ -380,6 +382,15 @@ def pop_review_item(context: AppContext, event_id_prefix: str) -> tuple[dict[str
     selected = matches[0]
     remaining = [event for event in events if event.get("id") != selected.get("id")]
     return selected, remaining
+
+
+def runtime_state_payload(state) -> dict[str, Any]:
+    return {
+        "at": state.last_activity_at,
+        "status": state.last_activity_status,
+        "reason": state.last_activity_reason,
+        "event_id": state.last_event_id,
+    }
 
 
 def describe_runtime_error(exc: Exception) -> str:

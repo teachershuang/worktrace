@@ -51,11 +51,13 @@ class BackgroundRecorderLoop:
 
             if status.paused:
                 logger.info("recording paused")
+                self._mark_loop_activity("paused", "用户已暂停记录", now)
                 self._sleep_short()
                 continue
 
             if not status.in_work_period:
                 logger.info("outside configured work periods, skipping")
+                self._mark_loop_activity("skipped", "当前不在配置的工作时间段内", now)
                 self._sleep_short()
                 continue
 
@@ -63,16 +65,25 @@ class BackgroundRecorderLoop:
             idle_limit_seconds = self.settings.recording.idle_skip_minutes * 60
             if idle_limit_seconds > 0 and idle_seconds is not None and idle_seconds >= idle_limit_seconds:
                 logger.info("system idle for %.0fs, skipping record cycle", idle_seconds)
+                self._mark_loop_activity("skipped", f"系统空闲 {idle_seconds:.0f}s，已跳过截图", now)
                 self._sleep_short()
                 continue
 
             try:
                 self.recorder.record_once()
-            except Exception:
+            except Exception as exc:
                 logger.exception("record cycle failed")
+                self._mark_loop_activity("failed", f"记录周期失败：{exc}", now)
 
             time.sleep(self.settings.recording.screenshot_interval_seconds)
 
     @staticmethod
     def _sleep_short() -> None:
         time.sleep(30)
+
+    def _mark_loop_activity(self, status: str, reason: str, occurred_at: datetime) -> None:
+        self.state_store.mark_activity(
+            status=status,
+            reason=reason,
+            occurred_at=occurred_at.isoformat(timespec="seconds"),
+        )

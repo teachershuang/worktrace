@@ -123,6 +123,57 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertFalse(state.paused)
             self.assertFalse(state.stop_requested)
 
+    def test_runtime_state_preserves_last_activity_when_flags_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+
+            store.mark_activity(
+                status="skipped",
+                reason="当前不在配置的工作时间段内",
+                occurred_at="2026-06-24T13:30:00",
+                event_id="evt-1",
+            )
+            store.pause()
+            store.resume()
+
+            state = store.load()
+            self.assertFalse(state.paused)
+            self.assertEqual(state.last_activity_status, "skipped")
+            self.assertEqual(state.last_activity_reason, "当前不在配置的工作时间段内")
+            self.assertEqual(state.last_event_id, "evt-1")
+
+    def test_recorder_marks_effective_event_activity(self) -> None:
+        captured_at = datetime(2026, 6, 18, 10, 8, 0)
+        decision = ActivityDecision(
+            should_record=True,
+            is_work=True,
+            category="开发编码",
+            project="WorkTrace",
+            title="记录有效工作",
+            summary="验证记录状态写入",
+            confidence=0.9,
+            need_review=False,
+            skip_reason=None,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EventStore(Path(temp_dir))
+            state_store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+            recorder = WorkRecorder(
+                capture=FakeCapture(captured_at),
+                ocr=FakeOCR(),
+                classifier=FakeClassifier(decision),
+                store=store,
+                state_store=state_store,
+            )
+
+            event = recorder.record_once()
+
+            state = state_store.load()
+            self.assertEqual(state.last_activity_status, "recorded")
+            self.assertEqual(state.last_activity_reason, "记录有效工作")
+            self.assertEqual(state.last_event_id, event["id"])
+
 
 if __name__ == "__main__":
     unittest.main()

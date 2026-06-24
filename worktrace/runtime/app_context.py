@@ -38,6 +38,7 @@ def build_app_context(config_path: Path, verbose: bool = False) -> AppContext:
         ocr=ocr,
         classifier=ActivityClassifier(llm),
         store=store,
+        state_store=state_store,
     )
     reports = ReportGenerator(
         llm=llm,

@@ -50,6 +50,11 @@ class FakeClassifier:
         return self.decision
 
 
+class FailingClassifier:
+    def classify(self, _context):
+        raise RuntimeError("LLM service authentication failed: gateway is reachable")
+
+
 class ActivityFlowTests(unittest.TestCase):
     def test_low_confidence_result_is_forced_to_review(self) -> None:
         classifier = ActivityClassifier(
@@ -173,6 +178,28 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertEqual(state.last_activity_status, "recorded")
             self.assertEqual(state.last_activity_reason, "记录有效工作")
             self.assertEqual(state.last_event_id, event["id"])
+
+    def test_recorder_marks_failed_activity_when_classification_fails(self) -> None:
+        captured_at = datetime(2026, 7, 6, 10, 0, 0)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EventStore(Path(temp_dir))
+            state_store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+            recorder = WorkRecorder(
+                capture=FakeCapture(captured_at),
+                ocr=FakeOCR(),
+                classifier=FailingClassifier(),
+                store=store,
+                state_store=state_store,
+            )
+
+            with self.assertRaises(RuntimeError):
+                recorder.record_once()
+
+            state = state_store.load()
+            self.assertEqual(state.last_activity_status, "failed")
+            self.assertIn("LLM 认证失败", state.last_activity_reason or "")
+            self.assertIsNone(state.last_event_id)
 
 
 if __name__ == "__main__":

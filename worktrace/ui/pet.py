@@ -34,6 +34,9 @@ class DesktopPetStatus:
     paused: bool
     review_count: int
     in_work_period: bool
+    last_activity_status: str | None = None
+    last_activity_reason: str | None = None
+    last_activity_at: str | None = None
 
     @property
     def headline(self) -> str:
@@ -50,6 +53,21 @@ class DesktopPetStatus:
         review = f"{self.review_count} 条待确认" if self.review_count else "暂无待确认"
         period = "工作时段内" if self.in_work_period else "非工作时段"
         return f"{period} · {review}"
+
+    @property
+    def last_activity_summary(self) -> str:
+        if not self.last_activity_status:
+            return "最近活动：尚未记录"
+        label = {
+            "recorded": "已记录",
+            "review": "待确认",
+            "skipped": "已跳过",
+            "paused": "已暂停",
+            "failed": "记录失败",
+        }.get(self.last_activity_status, self.last_activity_status)
+        reason = self.last_activity_reason or "无详细原因"
+        at = self.last_activity_at[11:16] if self.last_activity_at and len(self.last_activity_at) >= 16 else "--:--"
+        return f"{at} {label}：{reason}"
 
 
 @dataclass(frozen=True)
@@ -141,6 +159,9 @@ def build_pet_status(
     paused: bool,
     review_count: int,
     in_work_period: bool,
+    last_activity_status: str | None = None,
+    last_activity_reason: str | None = None,
+    last_activity_at: str | None = None,
 ) -> DesktopPetStatus:
     return DesktopPetStatus(
         view=select_pet_view(
@@ -153,6 +174,9 @@ def build_pet_status(
         paused=paused,
         review_count=review_count,
         in_work_period=in_work_period,
+        last_activity_status=last_activity_status,
+        last_activity_reason=last_activity_reason,
+        last_activity_at=last_activity_at,
     )
 
 
@@ -299,6 +323,18 @@ class DesktopPetWindow:
         )
         detail.pack(fill="x", pady=(2, 10))
 
+        recent = tk.Label(
+            frame,
+            text=status.last_activity_summary,
+            bg="#FFF8EF",
+            fg="#5E5147",
+            font=("Microsoft YaHei UI", 8),
+            anchor="w",
+            justify="left",
+            wraplength=164,
+        )
+        recent.pack(fill="x", pady=(0, 10))
+
         self._add_button(frame, "开始记录", self._run_panel_action(self.actions.start_recording), disabled=status.loop_running)
         self._add_button(frame, "暂停", self._run_panel_action(self.actions.pause_recording), disabled=not status.loop_running or status.paused)
         self._add_button(frame, "恢复", self._run_panel_action(self.actions.resume_recording), disabled=not status.paused)
@@ -347,7 +383,7 @@ class DesktopPetWindow:
         self.root.update_idletasks()
         screen_width = self.root.winfo_screenwidth()
         panel_width = 196
-        panel_height = 334
+        panel_height = 372
         pet_x = self.root.winfo_x()
         pet_y = self.root.winfo_y()
 

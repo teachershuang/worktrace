@@ -64,7 +64,15 @@ class WorkRecorder:
             recent_summary=self._recent_summary(now),
             project_names_today=self._project_names_today(now),
         )
-        decision = self.classifier.classify(context)
+        try:
+            decision = self.classifier.classify(context)
+        except Exception as exc:
+            self._mark_activity(
+                status="failed",
+                reason=f"屏幕内容理解失败：{summarize_record_error(exc)}",
+                occurred_at=now.isoformat(timespec="seconds"),
+            )
+            raise
 
         event = {
             "captured_at": now.isoformat(timespec="seconds"),
@@ -160,3 +168,15 @@ def parse_event_time(event: dict[str, Any]) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def summarize_record_error(exc: Exception) -> str:
+    message = str(exc).strip()
+    lowered = message.lower()
+    if "authentication failed" in lowered or "unauthorized" in lowered or "401" in lowered:
+        return "LLM 认证失败，请检查 llm.api_key 或模型网关授权"
+    if "timed out" in lowered or "timeout" in lowered:
+        return "服务请求超时，请检查 OCR/LLM 服务负载和 timeout_seconds"
+    if "not found" in lowered or "404" in lowered:
+        return "LLM 地址或模型名称不可用，请检查 llm.base_url 和 llm.model"
+    return message[:180] or exc.__class__.__name__

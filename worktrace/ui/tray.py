@@ -84,6 +84,9 @@ class TrayRuntime:
             paused=state.paused,
             review_count=review_count,
             in_work_period=in_work_period,
+            last_activity_status=state.last_activity_status,
+            last_activity_reason=state.last_activity_reason,
+            last_activity_at=state.last_activity_at,
         )
 
     @staticmethod

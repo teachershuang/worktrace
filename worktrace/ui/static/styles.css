@@ -361,7 +361,7 @@ h3 {
 
 .state-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 150px 74px;
+  grid-template-columns: minmax(0, 1fr) 150px minmax(180px, 0.9fr) 74px;
   align-items: center;
   gap: 18px;
 }
@@ -375,6 +375,19 @@ h3 {
   gap: 4px;
   padding-left: 16px;
   border-left: 1px solid var(--line);
+}
+
+.last-activity {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+.last-activity strong,
+.last-activity p {
+  overflow-wrap: anywhere;
 }
 
 .state-grid img {

@@ -48,11 +48,15 @@ class DesktopPetTests(unittest.TestCase):
             paused=False,
             review_count=2,
             in_work_period=True,
+            last_activity_status="recorded",
+            last_activity_reason="整理接口联调问题",
+            last_activity_at="2026-07-06T10:20:00",
         )
 
         self.assertEqual(status.headline, "后台记录中")
         self.assertEqual(status.detail, "工作时段内 · 2 条待确认")
         self.assertEqual(status.view.badge_text, "待确认 2")
+        self.assertEqual(status.last_activity_summary, "10:20 已记录：整理接口联调问题")
 
 
 if __name__ == "__main__":

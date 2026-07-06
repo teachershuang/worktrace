@@ -4,6 +4,8 @@ const statusPillEl = document.querySelector("#state-pill");
 const recordDotEl = document.querySelector("#record-dot");
 const recordStateEl = document.querySelector("#record-state");
 const recordCopyEl = document.querySelector("#record-copy");
+const lastActivityStatusEl = document.querySelector("#last-activity-status");
+const lastActivityReasonEl = document.querySelector("#last-activity-reason");
 const todayDateEl = document.querySelector("#today-date");
 const idleTimeEl = document.querySelector("#idle-time");
 const intervalEl = document.querySelector("#interval");
@@ -105,6 +107,36 @@ function renderDesktopCard(title, body, actions = "") {
   `;
 }
 
+function activityLabel(status) {
+  return {
+    recorded: "已记录",
+    review: "待确认",
+    skipped: "已跳过",
+    paused: "已暂停",
+    failed: "记录失败",
+  }[status] || status || "尚未记录";
+}
+
+function formatActivityTime(value) {
+  if (!value) return "--:--";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value).slice(11, 16) || "--:--";
+  }
+  return parsed.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderActivitySummary(activity) {
+  const status = activity?.status || null;
+  const reason = activity?.reason || "后台完成一次记录后会显示写入、待确认、跳过或失败原因。";
+  return {
+    label: activityLabel(status),
+    time: formatActivityTime(activity?.at),
+    reason,
+    mode: status === "failed" ? "bad" : status === "review" ? "warn" : status === "recorded" ? "ok" : "muted",
+  };
+}
+
 function selectedReviewDate() {
   return reviewDateEl?.value || new Date().toISOString().slice(0, 10);
 }
@@ -163,7 +195,14 @@ function renderReview(items) {
 function renderDiagnostics(payload) {
   const ocrFailed = payload.ocr.consecutive_failures > 0;
   const storageBad = payload.storage.some(item => !item.exists || !item.writable);
+  const activity = renderActivitySummary(payload.last_activity);
   const cards = [
+    {
+      title: "最近活动",
+      mode: activity.mode,
+      body: `${activity.time} · ${activity.label}`,
+      meta: activity.reason,
+    },
     {
       title: "OCR",
       mode: ocrFailed ? "bad" : "ok",
@@ -246,6 +285,14 @@ async function refresh() {
   recordStateEl.textContent = status.paused ? "暂停中" : runningText;
   recordCopyEl.textContent = status.in_work_period ? "处于配置的工作时间段" : "当前不在工作时间段";
   recordDotEl.style.background = status.loop_running && !status.paused ? "var(--green)" : "var(--amber)";
+
+  const activity = renderActivitySummary(status.last_activity);
+  if (lastActivityStatusEl) {
+    lastActivityStatusEl.textContent = `${activity.time} · ${activity.label}`;
+  }
+  if (lastActivityReasonEl) {
+    lastActivityReasonEl.textContent = activity.reason;
+  }
 
   idleTimeEl.textContent = status.idle_seconds === null ? "未知" : `${Math.round(status.idle_seconds)}s`;
   intervalEl.textContent = `${status.screenshot_interval_seconds}s`;

@@ -19,26 +19,12 @@
       </div>
 
       <nav class="nav-list" aria-label="主导航">
-        <a class="nav-item is-active" href="#overview" aria-current="page">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9 21v-7h6v7"/></svg></span>
-          <span>今日概览</span>
-        </a>
-        <a class="nav-item" href="#timeline">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-          <span>时间轴</span>
-        </a>
-        <a class="nav-item" href="#reports">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v5h4"/><path d="M10 13h5"/><path d="M10 17h5"/></svg></span>
-          <span>报告</span>
-        </a>
-        <a class="nav-item" href="#review">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.6 2.6 0 0 1 5 1c0 1.8-2.1 2.2-2.4 3.8"/><path d="M12 17.5h.01"/></svg></span>
-          <span>待确认</span>
-        </a>
-        <a class="nav-item" href="#settings">
-          <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 13.5v-3l2.2-.7.8-1.9-1-2 2.1-2.1 2 1 1.9-.8L12.5 2h3l.7 2.2 1.9.8 2-1 2.1 2.1-1 2 .8 1.9 2.2.7v3l-2.2.7-.8 1.9 1 2-2.1 2.1-2-1-1.9.8-.7 2.2h-3l-.7-2.2-1.9-.8-2 1-2.1-2.1 1-2-.8-1.9z"/></svg></span>
-          <span>配置</span>
-        </a>
+        <button class="nav-item is-active" data-view-target="overview" type="button">今日概览</button>
+        <button class="nav-item" data-view-target="timeline" type="button">时间轴</button>
+        <button class="nav-item" data-view-target="reports" type="button">报告编辑</button>
+        <button class="nav-item" data-view-target="review" type="button">待确认</button>
+        <button class="nav-item" data-view-target="settings" type="button">接口配置</button>
+        <button class="nav-item" data-view-target="diagnostics" type="button">运行诊断</button>
       </nav>
 
       <div class="assistant-card">
@@ -53,158 +39,185 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Local Console</p>
-          <h2>今日概览</h2>
+          <h2 id="view-title">今日概览</h2>
           <p id="today-date" class="muted">正在读取当前状态</p>
         </div>
         <div class="top-actions">
-          <button class="button ghost" data-action="test-ocr">测试 OCR</button>
-          <button class="button ghost" data-action="test-llm">测试 LLM</button>
-          <button class="button primary" data-action="record-once">
-            <span class="button-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h4l1.5-2h5L16 7h4v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg></span>
-            立即记录一次
-          </button>
+          <button class="button primary" data-action="start-or-resume">开始 / 恢复记录</button>
+          <button class="button ghost" data-action="pause-recording">暂停记录</button>
+          <button class="button ghost" data-action="record-once">立即记录一次</button>
         </div>
       </header>
 
-      <section class="metric-grid" aria-label="今日指标">
-        <article class="metric-card">
-          <span>记录时长</span>
-          <strong id="metric-duration">0h 00m</strong>
-          <small>有效工作时长</small>
-        </article>
-        <article class="metric-card">
-          <span>事件数量</span>
-          <strong id="metric-events">0</strong>
-          <small>有效事件</small>
-        </article>
-        <article class="metric-card">
-          <span>待确认</span>
-          <strong id="metric-review" class="warn-text">0</strong>
-          <small>待确认事件</small>
-        </article>
-        <article class="metric-card">
-          <span>OCR 状态</span>
-          <strong id="metric-ocr">正常</strong>
-          <small>连续失败次数</small>
-        </article>
+      <section class="view-section is-active" id="view-overview">
+        <section class="metric-grid" aria-label="今日指标">
+          <article class="metric-card">
+            <span>记录时长</span>
+            <strong id="metric-duration">0h 00m</strong>
+            <small>有效工作时长</small>
+          </article>
+          <article class="metric-card">
+            <span>事件数量</span>
+            <strong id="metric-events">0</strong>
+            <small>有效事件</small>
+          </article>
+          <article class="metric-card">
+            <span>待确认</span>
+            <strong id="metric-review" class="warn-text">0</strong>
+            <small>低置信度事件</small>
+          </article>
+          <article class="metric-card">
+            <span>OCR 状态</span>
+            <strong id="metric-ocr">正常</strong>
+            <small>连续失败次数</small>
+          </article>
+        </section>
+
+        <section class="panel-row">
+          <article class="panel state-panel">
+            <div class="panel-heading">
+              <h3>当前状态</h3>
+              <span id="state-pill" class="pill muted">读取中</span>
+            </div>
+            <div class="state-grid">
+              <div>
+                <span class="status-dot" id="record-dot"></span>
+                <strong id="record-state">未运行</strong>
+                <p id="record-copy" class="muted">等待开始记录</p>
+              </div>
+              <div class="window-info">
+                <span class="label">系统空闲</span>
+                <strong id="idle-time">未知</strong>
+                <span class="label">截图间隔</span>
+                <strong id="interval">-</strong>
+              </div>
+              <div class="last-activity" aria-live="polite">
+                <span class="label">最近活动</span>
+                <strong id="last-activity-status">尚未记录</strong>
+                <p id="last-activity-reason" class="muted">后台完成一次记录后会显示写入、待确认、跳过或失败原因。</p>
+              </div>
+              <img src="/static/assets/mascot/cat.png" alt="助手猫咪" />
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h3>快捷操作</h3>
+              <span class="muted">常用动作集中在这里</span>
+            </div>
+            <div class="quick-grid">
+              <button class="quick-button" data-action="test-ocr">测试 OCR</button>
+              <button class="quick-button" data-action="test-llm">测试 LLM</button>
+              <button class="quick-button" data-action="daily">生成今日日报</button>
+              <button class="quick-button" data-action="weekly">生成本周周报</button>
+            </div>
+            <div class="log-box" id="log" aria-live="polite">准备就绪</div>
+          </article>
+        </section>
       </section>
 
-      <section class="panel-row">
-        <article class="panel state-panel">
-          <div class="panel-heading">
-            <h3>当前状态</h3>
-            <span id="state-pill" class="pill muted">读取中</span>
-          </div>
-          <div class="state-grid">
-            <div>
-              <span class="status-dot" id="record-dot"></span>
-              <strong id="record-state">未运行</strong>
-              <p id="record-copy" class="muted">等待开始记录</p>
-            </div>
-            <div class="window-info">
-              <span class="label">系统空闲</span>
-              <strong id="idle-time">未知</strong>
-              <span class="label">截图间隔</span>
-              <strong id="interval">-</strong>
-            </div>
-            <div class="last-activity" aria-live="polite">
-              <span class="label">最近活动</span>
-              <strong id="last-activity-status">尚未记录</strong>
-              <p id="last-activity-reason" class="muted">后台完成一次记录后会显示写入、待确认、跳过或失败原因。</p>
-            </div>
-            <img src="/static/assets/mascot/cat.png" alt="助手猫咪" />
-          </div>
-        </article>
-
+      <section class="view-section" id="view-timeline">
         <article class="panel">
-          <div class="panel-heading">
-            <h3>今日时间分布</h3>
-            <span class="muted">工作段 / 休息段</span>
-          </div>
-          <div class="time-band" aria-hidden="true">
-            <span style="width: 39%"></span>
-            <i></i>
-            <span style="width: 36%"></span>
-          </div>
-          <div class="time-scale">
-            <span>09:00</span>
-            <span>12:00</span>
-            <span>13:30</span>
-            <span>18:00</span>
-          </div>
-          <div class="legend">
-            <span><b class="green"></b>工作时段</span>
-            <span><b class="gray"></b>休息时段</span>
-          </div>
-        </article>
-      </section>
-
-      <section class="panel diagnostics-panel" id="diagnostics">
-        <div class="panel-heading">
-          <h3>运行诊断</h3>
-          <button class="text-button" data-action="refresh-diagnostics">刷新诊断</button>
-        </div>
-        <div class="diagnostics-grid" id="diagnostics-grid"></div>
-      </section>
-
-      <section class="content-grid">
-        <article class="panel" id="timeline">
           <div class="panel-heading">
             <h3>最近事件</h3>
             <button class="text-button" data-refresh>刷新</button>
           </div>
           <ol class="event-list" id="timeline-list"></ol>
         </article>
+      </section>
 
-        <article class="panel" id="reports">
+      <section class="view-section" id="view-reports">
+        <article class="panel">
           <div class="panel-heading">
-            <h3>快捷操作</h3>
-            <span class="muted">报告与记录</span>
+            <h3>报告预览与编辑</h3>
+            <span class="muted">生成后可二次修改并保存</span>
           </div>
           <div class="quick-grid">
             <button class="quick-button" data-action="daily">生成今日日报</button>
             <button class="quick-button" data-action="weekly">生成本周周报</button>
             <button class="quick-button" data-action="refresh-reports">刷新报告预览</button>
-            <button class="quick-button" data-action="pause">暂停记录</button>
-            <button class="quick-button" data-action="resume">恢复记录</button>
-            <button class="quick-button danger" data-action="stop">停止记录</button>
-            <button class="quick-button" data-action="start">开始记录</button>
+            <button class="quick-button" data-action="edit-daily">编辑日报</button>
+            <button class="quick-button" data-action="edit-weekly">编辑周报</button>
+            <button class="quick-button" data-action="save-report">保存当前报告</button>
           </div>
-          <div class="log-box" id="log" aria-live="polite">准备就绪</div>
-          <pre class="report-preview" id="report-preview">尚未生成今日报告</pre>
-          <div class="report-editor">
-            <div class="button-row">
-              <button class="quick-button" data-action="edit-daily">编辑日报</button>
-              <button class="quick-button" data-action="edit-weekly">编辑周报</button>
-              <button class="quick-button" data-action="save-report">保存当前报告</button>
-            </div>
-            <textarea id="report-editor" spellcheck="false" placeholder="选择日报或周报后可在这里二次编辑。"></textarea>
-          </div>
+          <pre class="report-preview" id="report-preview">尚未生成报告</pre>
+          <textarea id="report-editor" class="report-editor-box" spellcheck="false" placeholder="选择日报或周报后可在这里二次编辑。"></textarea>
         </article>
       </section>
 
-      <section class="panel review-panel" id="review">
-        <div class="panel-heading">
-          <h3>待确认事件</h3>
-          <span class="muted">低置信度内容不会直接进入日报</span>
-        </div>
-        <div class="review-toolbar">
-          <input id="review-date" type="date" aria-label="待确认日期" />
-          <input id="review-search" type="search" placeholder="搜索标题、摘要或项目" aria-label="搜索待确认事件" />
-          <button class="quick-button" data-action="review-select-all">全选</button>
-          <button class="quick-button" data-action="review-bulk-work">批量标记工作</button>
-          <button class="quick-button danger" data-action="review-bulk-nonwork">批量标记非工作</button>
-        </div>
-        <div class="review-table" id="review-list"></div>
+      <section class="view-section" id="view-review">
+        <article class="panel review-panel">
+          <div class="panel-heading">
+            <h3>待确认事件</h3>
+            <span class="muted">低置信度内容不会直接进入日报</span>
+          </div>
+          <div class="review-toolbar">
+            <input id="review-date" type="date" aria-label="待确认日期" />
+            <input id="review-search" type="search" placeholder="搜索标题、摘要或项目" aria-label="搜索待确认事件" />
+            <button class="quick-button" data-action="review-select-all">全选</button>
+            <button class="quick-button" data-action="review-bulk-work">批量标记工作</button>
+            <button class="quick-button danger" data-action="review-bulk-nonwork">批量标记非工作</button>
+          </div>
+          <div class="review-table" id="review-list"></div>
+        </article>
       </section>
 
-      <section class="panel settings-panel" id="settings">
-        <div class="panel-heading">
-          <h3>当前配置</h3>
-          <span class="muted">只读摘要，修改请编辑配置文件后重启</span>
-        </div>
-        <div class="desktop-actions" id="desktop-actions"></div>
-        <div class="settings-grid" id="settings-grid"></div>
+      <section class="view-section" id="view-settings">
+        <article class="panel settings-panel">
+          <div class="panel-heading">
+            <h3>接口与运行配置</h3>
+            <span class="muted">保存后重启 WorkTrace 生效，真实密钥不会提交到仓库。</span>
+          </div>
+          <form class="config-form" id="config-form">
+            <fieldset>
+              <legend>大模型接口</legend>
+              <label>服务地址 <input name="llm.base_url" placeholder="http://127.0.0.1:8000/v1" /></label>
+              <label>API Key <input name="llm.api_key" type="password" autocomplete="off" /></label>
+              <label>模型名称 <input name="llm.model" placeholder="qwen3.6-35b-a3b" /></label>
+              <label>超时秒数 <input name="llm.timeout_seconds" type="number" min="1" step="1" /></label>
+            </fieldset>
+            <fieldset>
+              <legend>OCR 接口</legend>
+              <label>服务地址 <input name="ocr.url" placeholder="http://192.168.8.29:9000/ocr" /></label>
+              <label>协议
+                <select name="ocr.protocol">
+                  <option value="multipart">multipart</option>
+                  <option value="paddle_json">paddle_json</option>
+                </select>
+              </label>
+              <label>超时秒数 <input name="ocr.timeout_seconds" type="number" min="1" step="1" /></label>
+            </fieldset>
+            <fieldset>
+              <legend>记录策略</legend>
+              <label>工作时段 <input name="recording.work_periods" placeholder="09:00-12:00,13:30-18:00" /></label>
+              <label>截图间隔秒数 <input name="recording.screenshot_interval_seconds" type="number" min="1" step="1" /></label>
+              <label>空闲跳过分钟 <input name="recording.idle_skip_minutes" type="number" min="0" step="1" /></label>
+              <label class="checkbox-row"><input name="recording.enable_tray" type="checkbox" /> 启用托盘后台模式</label>
+            </fieldset>
+            <fieldset>
+              <legend>本地存储</legend>
+              <label>数据目录 <input name="storage.data_dir" /></label>
+              <label>报告目录 <input name="storage.report_output_dir" /></label>
+              <label>日志目录 <input name="storage.log_dir" /></label>
+            </fieldset>
+            <div class="button-row">
+              <button class="quick-button" type="button" data-action="save-config">保存配置</button>
+              <button class="quick-button" type="button" data-action="reload-config-form">重新读取</button>
+            </div>
+          </form>
+          <div class="desktop-actions" id="desktop-actions"></div>
+          <div class="settings-grid" id="settings-grid"></div>
+        </article>
+      </section>
+
+      <section class="view-section" id="view-diagnostics">
+        <article class="panel diagnostics-panel">
+          <div class="panel-heading">
+            <h3>运行诊断</h3>
+            <button class="text-button" data-action="refresh-diagnostics">刷新诊断</button>
+          </div>
+          <div class="diagnostics-grid" id="diagnostics-grid"></div>
+        </article>
       </section>
     </main>
   </div>

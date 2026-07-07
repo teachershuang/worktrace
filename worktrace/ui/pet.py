@@ -231,8 +231,10 @@ class DesktopPetWindow:
         self.menu.add_command(label="退出 WorkTrace", command=self.actions.quit_app)
 
     def run(self) -> None:
+        self.preferences = self._visible_preferences(self.preferences)
         self.root.geometry(f"+{self.preferences.x}+{self.preferences.y}")
         self.root.deiconify()
+        self.root.lift()
         self.refresh()
         self.root.mainloop()
 
@@ -392,6 +394,19 @@ class DesktopPetWindow:
             x = max(8, pet_x - panel_width + 18)
         y = max(8, pet_y + 10)
         self._panel.geometry(f"{panel_width}x{panel_height}+{x}+{y}")
+
+    def _visible_preferences(self, prefs: DesktopPetPreferences) -> DesktopPetPreferences:
+        screen_width = max(self.root.winfo_screenwidth(), 200)
+        screen_height = max(self.root.winfo_screenheight(), 200)
+        max_x = max(8, screen_width - 180)
+        max_y = max(8, screen_height - 190)
+        x = min(max(8, prefs.x), max_x)
+        y = min(max(8, prefs.y), max_y)
+        if x != prefs.x or y != prefs.y:
+            corrected = DesktopPetPreferences(x=x, y=y)
+            self.preferences_store.save(corrected)
+            return corrected
+        return prefs
 
     def _destroy_panel(self) -> None:
         if not self._panel:

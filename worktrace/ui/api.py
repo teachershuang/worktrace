@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -113,6 +114,58 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             },
         }
 
+    @app.get("/api/config/editable")
+    def config_editable() -> dict[str, Any]:
+        settings = context.settings
+        return {
+            "config_path": str(config_path),
+            "llm": {
+                "base_url": settings.llm.base_url,
+                "api_key": settings.llm.api_key,
+                "model": settings.llm.model,
+                "timeout_seconds": settings.llm.timeout_seconds,
+                "trust_env": settings.llm.trust_env,
+            },
+            "ocr": {
+                "url": settings.ocr.url,
+                "protocol": settings.ocr.protocol,
+                "timeout_seconds": settings.ocr.timeout_seconds,
+                "trust_env": settings.ocr.trust_env,
+            },
+            "recording": {
+                "work_periods": settings.recording.work_periods,
+                "screenshot_interval_seconds": settings.recording.screenshot_interval_seconds,
+                "idle_skip_minutes": settings.recording.idle_skip_minutes,
+                "enable_tray": settings.recording.enable_tray,
+            },
+            "storage": {
+                "data_dir": str(settings.storage.data_dir),
+                "report_output_dir": str(settings.storage.report_output_dir),
+                "log_dir": str(settings.storage.log_dir),
+            },
+            "restart_required": True,
+        }
+
+    @app.put("/api/config/editable")
+    def config_save(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        config_payload = normalize_config_payload(payload)
+        try:
+            validated = context.settings.__class__.model_validate(config_payload)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"配置校验失败: {exc}") from exc
+
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            yaml.safe_dump(validated.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return {
+            "saved": True,
+            "path": str(config_path),
+            "restart_required": True,
+            "message": "配置已保存，重启 WorkTrace 后生效。",
+        }
+
     @app.get("/api/autostart")
     def autostart_status() -> dict[str, Any]:
         status = autostart.status()
@@ -128,6 +181,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
 
     @app.post("/api/start")
     def start() -> dict[str, Any]:
+        context.state_store.resume()
         started = runtime.start_loop()
         return {"started": started, "loop_running": runtime.loop_running()}
 
@@ -137,9 +191,21 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         return {"paused": True}
 
     @app.post("/api/resume")
-    def resume() -> dict[str, bool]:
+    def resume() -> dict[str, Any]:
         context.state_store.resume()
-        return {"paused": False}
+        started = runtime.start_loop()
+        return {"paused": False, "started": started, "loop_running": runtime.loop_running()}
+
+    @app.post("/api/recording/start-or-resume")
+    def recording_start_or_resume() -> dict[str, Any]:
+        context.state_store.resume()
+        started = runtime.start_loop()
+        return {"paused": False, "started": started, "loop_running": runtime.loop_running()}
+
+    @app.post("/api/recording/pause")
+    def recording_pause() -> dict[str, Any]:
+        context.state_store.pause()
+        return {"paused": True, "loop_running": runtime.loop_running()}
 
     @app.post("/api/stop")
     def stop() -> dict[str, bool]:
@@ -390,6 +456,51 @@ def runtime_state_payload(state) -> dict[str, Any]:
         "status": state.last_activity_status,
         "reason": state.last_activity_reason,
         "event_id": state.last_event_id,
+    }
+
+
+def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    def section(name: str) -> dict[str, Any]:
+        value = payload.get(name, {})
+        if not isinstance(value, dict):
+            raise HTTPException(status_code=422, detail=f"{name} must be an object")
+        return value
+
+    llm = section("llm")
+    ocr = section("ocr")
+    recording = section("recording")
+    storage = section("storage")
+    work_periods_raw = recording.get("work_periods", [])
+    if isinstance(work_periods_raw, str):
+        work_periods = [item.strip() for item in work_periods_raw.replace("，", ",").split(",") if item.strip()]
+    else:
+        work_periods = work_periods_raw
+
+    return {
+        "llm": {
+            "base_url": str(llm.get("base_url", "")).strip(),
+            "api_key": str(llm.get("api_key", "")),
+            "model": str(llm.get("model", "")).strip(),
+            "timeout_seconds": float(llm.get("timeout_seconds", 60)),
+            "trust_env": bool(llm.get("trust_env", False)),
+        },
+        "ocr": {
+            "url": str(ocr.get("url", "")).strip(),
+            "protocol": str(ocr.get("protocol", "multipart")).strip(),
+            "timeout_seconds": float(ocr.get("timeout_seconds", 30)),
+            "trust_env": bool(ocr.get("trust_env", False)),
+        },
+        "recording": {
+            "work_periods": work_periods,
+            "screenshot_interval_seconds": int(recording.get("screenshot_interval_seconds", 300)),
+            "idle_skip_minutes": int(recording.get("idle_skip_minutes", 10)),
+            "enable_tray": bool(recording.get("enable_tray", False)),
+        },
+        "storage": {
+            "data_dir": str(storage.get("data_dir", "data")).strip(),
+            "report_output_dir": str(storage.get("report_output_dir", "data/reports")).strip(),
+            "log_dir": str(storage.get("log_dir", "logs")).strip(),
+        },
     }
 
 

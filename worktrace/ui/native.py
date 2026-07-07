@@ -12,7 +12,6 @@ import uvicorn
 from PIL import Image, ImageDraw
 
 from worktrace.ui.api import create_app
-
 logger = logging.getLogger(__name__)
 STATIC_ASSETS = Path(__file__).resolve().parent / "static" / "assets"
 
@@ -39,9 +38,10 @@ class LocalServerHandle:
 
 
 class NativeWindowLifecycle:
-    def __init__(self, window, server_handle: LocalServerHandle):
+    def __init__(self, window, server_handle: LocalServerHandle, pet_window=None):
         self.window = window
         self.server_handle = server_handle
+        self.pet_window = pet_window
         self.exiting = False
 
     def hide_to_tray(self) -> bool:
@@ -54,12 +54,22 @@ class NativeWindowLifecycle:
     def show_window(self) -> None:
         self.window.show()
         self.window.restore()
+        if self.pet_window is not None:
+            self.pet_window.show()
+            self.pet_window.restore()
 
     def exit_app(self) -> None:
         self.exiting = True
+        if self.pet_window is not None:
+            self.pet_window.destroy()
         self.window.destroy()
 
     def cleanup(self) -> None:
+        if self.pet_window is not None:
+            try:
+                self.pet_window.destroy()
+            except Exception:
+                logger.debug("desktop pet window was already closed", exc_info=True)
         self.server_handle.stop()
 
 
@@ -82,7 +92,22 @@ def launch_native_window(
         text_select=True,
         confirm_close=False,
     )
-    lifecycle = NativeWindowLifecycle(window, server_handle)
+    pet_window = webview.create_window(
+        "WorkTrace Pet",
+        html=native_pet_html(),
+        width=176,
+        height=176,
+        x=32,
+        y=180,
+        resizable=False,
+        frameless=True,
+        easy_drag=True,
+        on_top=True,
+        transparent=True,
+        background_color="#00FF00",
+        confirm_close=False,
+    )
+    lifecycle = NativeWindowLifecycle(window, server_handle, pet_window=pet_window)
     tray_icon = create_native_tray_icon(lifecycle)
 
     def on_closed() -> None:
@@ -101,7 +126,6 @@ def launch_native_window(
     finally:
         if tray_icon is not None:
             tray_icon.stop()
-
 
 def create_native_tray_icon(lifecycle: NativeWindowLifecycle):
     try:
@@ -280,6 +304,83 @@ def loading_html() -> str:
     <h1>WorkTrace</h1>
     <p>正在启动本地桌面控制台与后台服务</p>
     <div class="bar" aria-hidden="true"></div>
+  </div>
+</body>
+</html>
+""".strip()
+
+
+def native_pet_html() -> str:
+    mascot = (STATIC_ASSETS / "mascot" / "assistant-main.png").as_uri()
+    cat = (STATIC_ASSETS / "mascot" / "cat.png").as_uri()
+    return f"""
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorkTrace Pet</title>
+  <style>
+    html, body {{
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      user-select: none;
+    }}
+    .pet {{
+      width: 176px;
+      height: 176px;
+      display: grid;
+      place-items: center;
+      position: relative;
+      -webkit-app-region: drag;
+    }}
+    .bubble {{
+      position: absolute;
+      left: 28px;
+      bottom: 8px;
+      min-width: 92px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #dcf0df;
+      color: #2d7a3d;
+      border: 1px solid rgba(45, 122, 61, 0.16);
+      box-shadow: 0 10px 28px rgba(61, 46, 31, 0.14);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+    }}
+    .assistant {{
+      width: 124px;
+      height: 124px;
+      object-fit: contain;
+      image-rendering: auto;
+      filter: drop-shadow(0 16px 22px rgba(65, 45, 24, 0.18));
+      animation: float 2.8s ease-in-out infinite;
+    }}
+    .cat {{
+      position: absolute;
+      right: 14px;
+      bottom: 26px;
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 14px rgba(65, 45, 24, 0.14));
+    }}
+    @keyframes float {{
+      0%, 100% {{ transform: translateY(0); }}
+      50% {{ transform: translateY(-5px); }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="pet" title="WorkTrace 桌宠">
+    <img class="assistant" src="{mascot}" alt="WorkTrace 助手" />
+    <img class="cat" src="{cat}" alt="助手猫咪" />
+    <div class="bubble">待命中</div>
   </div>
 </body>
 </html>

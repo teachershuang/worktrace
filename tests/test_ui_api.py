@@ -206,6 +206,33 @@ storage:
             finally:
                 logging.shutdown()
 
+    def test_editable_config_can_update_service_endpoints(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+
+            try:
+                client = TestClient(create_app(config_path))
+                current = client.get("/api/config/editable").json()
+                current["llm"]["base_url"] = "http://192.168.8.29:4000/v1"
+                current["llm"]["model"] = "Qwen3.6-35B-A3B-GGUF"
+                current["ocr"]["url"] = "http://192.168.8.29:8866/ocr"
+                current["ocr"]["protocol"] = "paddle_json"
+                current["recording"]["work_periods"] = "09:00-12:00,13:30-18:00"
+                current["recording"]["screenshot_interval_seconds"] = 120
+
+                response = client.put("/api/config/editable", json=current)
+
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertTrue(payload["saved"])
+                saved = config_path.read_text(encoding="utf-8")
+                self.assertIn("http://192.168.8.29:4000/v1", saved)
+                self.assertIn("paddle_json", saved)
+                self.assertIn("screenshot_interval_seconds: 120", saved)
+            finally:
+                logging.shutdown()
+
 
 def write_test_config(root: Path) -> Path:
     config_path = root / "config.yaml"

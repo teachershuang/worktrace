@@ -31,6 +31,7 @@ body {
 }
 
 button, a { font: inherit; }
+button { font-family: inherit; }
 
 .skip-link {
   position: fixed;
@@ -109,9 +110,13 @@ button, a { font: inherit; }
   gap: 10px;
   min-height: 44px;
   padding: 0 10px;
+  border: 0;
   border-radius: 9px;
+  background: transparent;
   color: var(--ink);
   text-decoration: none;
+  text-align: left;
+  cursor: pointer;
   transition: background 180ms ease, transform 180ms ease;
 }
 
@@ -169,6 +174,19 @@ button, a { font: inherit; }
 
 .workspace {
   min-width: 0;
+  max-height: calc(100dvh - 40px);
+  overflow: hidden;
+}
+
+.view-section {
+  display: none;
+  max-height: calc(100dvh - 132px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.view-section.is-active {
+  display: block;
 }
 
 .topbar {
@@ -558,6 +576,19 @@ h3 {
   font: 13px/1.65 "Cascadia Mono", "Microsoft YaHei", monospace;
 }
 
+.report-editor-box {
+  width: 100%;
+  min-height: 260px;
+  margin-top: 12px;
+  resize: vertical;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+  color: var(--ink);
+  font: 13px/1.65 "Cascadia Mono", "Microsoft YaHei", monospace;
+}
+
 .review-table {
   display: grid;
   gap: 8px;
@@ -643,6 +674,61 @@ h3 {
   gap: 10px;
 }
 
+.config-form {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.config-form fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 253, 248, 0.72);
+}
+
+.config-form legend {
+  padding: 0 8px;
+  color: #5b4030;
+  font-weight: 800;
+}
+
+.config-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.config-form input,
+.config-form select {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fffdf8;
+  color: var(--ink);
+  padding: 0 11px;
+  font: inherit;
+}
+
+.config-form .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.config-form .checkbox-row input {
+  width: auto;
+  min-height: auto;
+}
+
 .setting-item {
   display: grid;
   gap: 5px;
@@ -711,6 +797,9 @@ h3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .settings-grid {
+    grid-template-columns: 1fr;
+  }
+  .config-form fieldset {
     grid-template-columns: 1fr;
   }
 }

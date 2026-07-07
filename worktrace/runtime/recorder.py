@@ -136,7 +136,9 @@ class WorkRecorder:
 
     def _previous_valid_event(self, now: datetime) -> dict[str, Any] | None:
         events = self.store.load_effective(now.date())
-        return events[-1] if events else None
+        if not events:
+            return None
+        return compact_event_for_context(events[-1])
 
     def _recent_summary(self, now: datetime) -> str:
         cutoff = now - timedelta(minutes=30)
@@ -179,4 +181,21 @@ def summarize_record_error(exc: Exception) -> str:
         return "服务请求超时，请检查 OCR/LLM 服务负载和 timeout_seconds"
     if "not found" in lowered or "404" in lowered:
         return "LLM 地址或模型名称不可用，请检查 llm.base_url 和 llm.model"
+    if "context size" in lowered or "tokens" in lowered:
+        return "LLM 上下文过长，请检查 OCR 文本或历史事件摘要裁剪"
     return message[:180] or exc.__class__.__name__
+
+
+def compact_event_for_context(event: dict[str, Any]) -> dict[str, Any]:
+    classification = event.get("classification", {})
+    active_window = event.get("active_window", {})
+    return {
+        "captured_at": event.get("captured_at"),
+        "app_name": active_window.get("app_name"),
+        "window_title": active_window.get("title"),
+        "project": classification.get("project"),
+        "category": classification.get("category"),
+        "title": classification.get("title"),
+        "summary": classification.get("summary"),
+        "confidence": classification.get("confidence"),
+    }

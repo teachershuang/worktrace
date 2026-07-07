@@ -12,7 +12,7 @@ from worktrace.classifier.activity import (
     ClassificationContext,
 )
 from worktrace.ocr.client import OCRResult
-from worktrace.runtime.recorder import WorkRecorder
+from worktrace.runtime.recorder import WorkRecorder, compact_event_for_context
 from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.store import EventStore
 
@@ -200,6 +200,28 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertEqual(state.last_activity_status, "failed")
             self.assertIn("LLM 认证失败", state.last_activity_reason or "")
             self.assertIsNone(state.last_event_id)
+
+    def test_compact_event_for_context_drops_recursive_payload(self) -> None:
+        event = {
+            "captured_at": "2026-07-07T13:20:00",
+            "active_window": {"app_name": "Code.exe", "title": "WorkTrace"},
+            "ocr": {"text": "x" * 10000},
+            "classification": {
+                "project": "WorkTrace",
+                "category": "开发编码",
+                "title": "修复记录链路",
+                "summary": "压缩上一条事件上下文",
+                "confidence": 0.94,
+            },
+            "context": {"previous_event": {"context": {"previous_event": "recursive"}}},
+        }
+
+        compact = compact_event_for_context(event)
+
+        self.assertEqual(compact["title"], "修复记录链路")
+        self.assertEqual(compact["app_name"], "Code.exe")
+        self.assertNotIn("ocr", compact)
+        self.assertNotIn("context", compact)
 
 
 if __name__ == "__main__":

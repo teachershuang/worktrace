@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -28,16 +29,20 @@ class ConsoleRuntime:
     def __init__(self, context: AppContext):
         self.context = context
         self._loop_thread: threading.Thread | None = None
+        self._stop_event: threading.Event | None = None
         self._lock = threading.Lock()
+        self.service_checks: dict[str, dict[str, Any] | None] = {"ocr": None, "llm": None}
 
     def start_loop(self) -> bool:
         with self._lock:
             if self._loop_thread and self._loop_thread.is_alive():
                 return False
+            self._stop_event = threading.Event()
             loop = BackgroundRecorderLoop(
                 self.context.settings,
                 self.context.recorder,
                 self.context.state_store,
+                stop_event=self._stop_event,
             )
             self._loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
             self._loop_thread.start()
@@ -45,6 +50,30 @@ class ConsoleRuntime:
 
     def loop_running(self) -> bool:
         return bool(self._loop_thread and self._loop_thread.is_alive())
+
+    def stop_loop(self, timeout: float = 3.0) -> bool:
+        with self._lock:
+            if not self._loop_thread or not self._loop_thread.is_alive():
+                return True
+            self.context.state_store.request_stop()
+            if self._stop_event is not None:
+                self._stop_event.set()
+            thread = self._loop_thread
+        thread.join(timeout=timeout)
+        return not thread.is_alive()
+
+    def replace_context(self, context: AppContext) -> None:
+        self.stop_loop(timeout=3.0)
+        with self._lock:
+            self.context = context
+
+    def record_service_check(self, name: str, *, ok: bool, message: str, elapsed_ms: int) -> None:
+        self.service_checks[name] = {
+            "ok": ok,
+            "message": message,
+            "elapsed_ms": elapsed_ms,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
 
 
 def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -> FastAPI:
@@ -143,11 +172,12 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "report_output_dir": str(settings.storage.report_output_dir),
                 "log_dir": str(settings.storage.log_dir),
             },
-            "restart_required": True,
+            "restart_required": False,
         }
 
     @app.put("/api/config/editable")
     def config_save(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+        nonlocal context
         config_payload = normalize_config_payload(payload)
         try:
             validated = context.settings.__class__.model_validate(config_payload)
@@ -159,10 +189,17 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             yaml.safe_dump(validated.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
+        try:
+            next_context = build_app_context(config_path, verbose=verbose)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"配置已写入，但热更新失败，请重启 WorkTrace: {exc}") from exc
+        runtime.replace_context(next_context)
+        context = next_context
         return {
             "saved": True,
+            "reloaded": True,
             "path": str(config_path),
-            "restart_required": True,
+            "restart_required": False,
             "message": "配置已保存，重启 WorkTrace 后生效。",
         }
 
@@ -340,10 +377,12 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "url": context.settings.ocr.url,
                 "protocol": context.settings.ocr.protocol,
                 "consecutive_failures": context.recorder.consecutive_ocr_failures,
+                "last_check": runtime.service_checks.get("ocr"),
             },
             "llm": {
                 "base_url": context.settings.llm.base_url,
                 "model": context.settings.llm.model,
+                "last_check": runtime.service_checks.get("llm"),
             },
             "storage": [
                 {
@@ -365,17 +404,23 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
 
     @app.post("/api/test/llm")
     def test_llm() -> dict[str, Any]:
+        started_at = time.perf_counter()
         ok, message = context.llm.test_connection()
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        runtime.record_service_check("llm", ok=ok, message=message, elapsed_ms=elapsed_ms)
         if not ok:
             raise HTTPException(status_code=502, detail=describe_runtime_error(LLMError(message)))
-        return {"ok": ok, "message": message}
+        return {"ok": ok, "message": message, "elapsed_ms": elapsed_ms}
 
     @app.post("/api/test/ocr")
     def test_ocr() -> dict[str, Any]:
+        started_at = time.perf_counter()
         ok, message = context.ocr.test_connection()
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        runtime.record_service_check("ocr", ok=ok, message=message, elapsed_ms=elapsed_ms)
         if not ok:
             raise HTTPException(status_code=502, detail=describe_runtime_error(OCRError(message)))
-        return {"ok": ok, "message": message}
+        return {"ok": ok, "message": message, "elapsed_ms": elapsed_ms}
 
     return app
 

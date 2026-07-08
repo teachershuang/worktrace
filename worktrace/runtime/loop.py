@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -27,23 +28,25 @@ class BackgroundRecorderLoop:
         settings: AppSettings,
         recorder: WorkRecorder,
         state_store: RuntimeStateStore,
+        stop_event: threading.Event | None = None,
     ):
         self.settings = settings
         self.recorder = recorder
         self.state_store = state_store
+        self.stop_event = stop_event or threading.Event()
         self.periods = settings.recording.parsed_periods()
 
     def run_forever(self) -> None:
         self.state_store.start()
         logger.info("WorkTrace background recorder started")
-        while True:
+        while not self.stop_event.is_set():
             state = self.state_store.load()
             now = datetime.now()
             in_work_period = is_within_work_periods(now, self.periods)
             status = LoopStatus(
                 paused=state.paused,
                 in_work_period=in_work_period,
-                stop_requested=state.stop_requested,
+                stop_requested=state.stop_requested or self.stop_event.is_set(),
             )
             if status.stop_requested:
                 logger.info("WorkTrace background recorder stopped by state request")
@@ -75,11 +78,13 @@ class BackgroundRecorderLoop:
                 logger.exception("record cycle failed")
                 self._mark_loop_activity("failed", f"记录周期失败：{exc}", now)
 
-            time.sleep(self.settings.recording.screenshot_interval_seconds)
+            self._sleep(self.settings.recording.screenshot_interval_seconds)
 
-    @staticmethod
-    def _sleep_short() -> None:
-        time.sleep(30)
+    def _sleep_short(self) -> None:
+        self._sleep(30)
+
+    def _sleep(self, seconds: float) -> None:
+        self.stop_event.wait(seconds)
 
     def _mark_loop_activity(self, status: str, reason: str, occurred_at: datetime) -> None:
         self.state_store.mark_activity(

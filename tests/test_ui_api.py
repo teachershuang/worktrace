@@ -230,6 +230,10 @@ storage:
                 self.assertIn("http://192.168.8.29:4000/v1", saved)
                 self.assertIn("paddle_json", saved)
                 self.assertIn("screenshot_interval_seconds: 120", saved)
+                summary = client.get("/api/config/summary").json()
+                self.assertEqual(summary["llm"]["base_url"], "http://192.168.8.29:4000/v1")
+                self.assertEqual(summary["ocr"]["url"], "http://192.168.8.29:8866/ocr")
+                self.assertEqual(summary["recording"]["screenshot_interval_seconds"], 120)
             finally:
                 logging.shutdown()
 

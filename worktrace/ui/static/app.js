@@ -132,6 +132,13 @@ function renderActivitySummary(activity) {
   };
 }
 
+function renderServiceCheck(check) {
+  if (!check) return "尚未测试";
+  const state = check.ok ? "成功" : "失败";
+  const elapsed = Number.isFinite(check.elapsed_ms) ? `${check.elapsed_ms}ms` : "-";
+  return `${state} · ${elapsed} · ${check.checked_at || "-"}`;
+}
+
 function selectedReviewDate() {
   return els.reviewDate?.value || new Date().toISOString().slice(0, 10);
 }
@@ -395,6 +402,48 @@ async function refreshReports() {
   } catch (error) {
     els.reportPreview.textContent = `报告读取失败: ${humanizeError(error.message)}`;
   }
+}
+
+function renderDiagnostics(payload) {
+  const ocrFailed = payload.ocr.consecutive_failures > 0;
+  const storageBad = payload.storage.some(item => !item.exists || !item.writable);
+  const activity = renderActivitySummary(payload.last_activity);
+  const ocrCheck = payload.ocr.last_check;
+  const llmCheck = payload.llm.last_check;
+  const cards = [
+    { title: "最近活动", mode: activity.mode, body: `${activity.time} · ${activity.label}`, meta: activity.reason },
+    {
+      title: "OCR",
+      mode: ocrFailed || ocrCheck?.ok === false ? "bad" : "ok",
+      body: ocrFailed ? `连续失败 ${payload.ocr.consecutive_failures} 次` : `${payload.ocr.protocol} · ${renderServiceCheck(ocrCheck)}`,
+      meta: payload.ocr.url,
+    },
+    {
+      title: "LLM",
+      mode: llmCheck?.ok === false ? "bad" : "muted",
+      body: `${payload.llm.model} · ${renderServiceCheck(llmCheck)}`,
+      meta: payload.llm.base_url,
+    },
+    {
+      title: "本地存储",
+      mode: storageBad ? "bad" : "ok",
+      body: storageBad ? "存在不可写目录" : "目录可写",
+      meta: payload.storage.map(item => `${item.name}: ${item.writable ? "可写" : "异常"}`).join(" / "),
+    },
+    {
+      title: "今日事件",
+      mode: payload.events.review_today ? "warn" : "ok",
+      body: `${payload.events.effective_today} 个有效，${payload.events.review_today} 个待确认`,
+      meta: `${payload.events.raw_today} 条原始记录`,
+    },
+  ];
+  els.diagnosticsGrid.innerHTML = cards.map(card => `
+    <div class="diagnostic-card ${card.mode}">
+      <strong>${escapeHtml(card.title)}</strong>
+      <span>${escapeHtml(card.body)}</span>
+      <small>${escapeHtml(card.meta)}</small>
+    </div>
+  `).join("");
 }
 
 async function refreshDiagnostics() {

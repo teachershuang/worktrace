@@ -63,7 +63,7 @@ flowchart LR
 
 ### Download Windows Build
 
-Download all `WorkTrace-v*-windows-x64.7z.part*` files from [GitHub Releases](https://github.com/teachershuang/worktrace/releases), put them in the same folder, extract `part01` with 7-Zip, then edit `config.yaml` beside `WorkTrace.exe`.
+Download `WorkTrace-v*-windows-x64.7z` from [GitHub Releases](https://github.com/teachershuang/worktrace/releases), extract it with 7-Zip, then edit `config.yaml` beside `WorkTrace.exe`. If the single archive is unavailable, download all matching `.part*` files and extract `part01`.
 
 ```powershell
 .\WorkTrace.exe

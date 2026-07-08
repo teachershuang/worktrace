@@ -63,7 +63,7 @@ flowchart LR
 
 ### Download Windows Build
 
-Download the latest `WorkTrace-v*.zip` from [GitHub Releases](https://github.com/teachershuang/worktrace/releases), unzip it, then edit `config.yaml` beside `WorkTrace.exe`.
+Download all `WorkTrace-v*-windows-x64.7z.part*` files from [GitHub Releases](https://github.com/teachershuang/worktrace/releases), put them in the same folder, extract `part01` with 7-Zip, then edit `config.yaml` beside `WorkTrace.exe`.
 
 ```powershell
 .\WorkTrace.exe
@@ -165,10 +165,10 @@ dist/WorkTrace/
   config.lan.example.yaml
 ```
 
-Create a release zip:
+Create a release archive:
 
 ```powershell
-Compress-Archive -Path dist\WorkTrace\* -DestinationPath dist\WorkTrace-v0.3.0-windows-x64.zip -Force
+7z a -t7z -mx=9 dist\WorkTrace-v0.3.0-windows-x64.7z .\dist\WorkTrace\*
 ```
 
 ## Project Layout

@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from worktrace import __version__
 from worktrace.capture.idle import get_idle_seconds
+from worktrace.capture.foreground import evaluate_foreground
 from worktrace.config.settings import ConfigError
 from worktrace.llm.client import LLMError
 from worktrace.ocr.client import OCRError
@@ -102,6 +103,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
     def status() -> dict[str, Any]:
         state = context.state_store.load()
         now = datetime.now()
+        foreground = evaluate_foreground(context.settings.recording)
         return {
             "loop_running": runtime.loop_running(),
             "paused": state.paused,
@@ -114,6 +116,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "ocr_consecutive_failures": context.recorder.consecutive_ocr_failures,
             "idle_seconds": get_idle_seconds(),
             "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
+            "foreground_guard": foreground_payload(foreground),
             "last_activity": runtime_state_payload(state),
         }
 
@@ -140,6 +143,9 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "short_poll_interval_seconds": settings.recording.short_poll_interval_seconds,
                 "idle_skip_minutes": settings.recording.idle_skip_minutes,
                 "enable_tray": settings.recording.enable_tray,
+                "skip_when_screen_locked": settings.recording.skip_when_screen_locked,
+                "skip_own_windows": settings.recording.skip_own_windows,
+                "fullscreen_skip_apps": settings.recording.fullscreen_skip_apps,
             },
             "storage": {
                 "data_dir": str(settings.storage.data_dir),
@@ -179,6 +185,9 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "short_poll_interval_seconds": settings.recording.short_poll_interval_seconds,
                 "idle_skip_minutes": settings.recording.idle_skip_minutes,
                 "enable_tray": settings.recording.enable_tray,
+                "skip_when_screen_locked": settings.recording.skip_when_screen_locked,
+                "skip_own_windows": settings.recording.skip_own_windows,
+                "fullscreen_skip_apps": settings.recording.fullscreen_skip_apps,
             },
             "storage": {
                 "data_dir": str(settings.storage.data_dir),
@@ -485,6 +494,17 @@ def runtime_state_payload(state) -> dict[str, Any]:
     }
 
 
+def foreground_payload(decision) -> dict[str, Any]:
+    return {
+        "skip": decision.skip,
+        "reason": decision.reason,
+        "screen_locked": decision.screen_locked,
+        "fullscreen": decision.fullscreen,
+        "app_name": decision.active_window.app_name,
+        "window_title": decision.active_window.title,
+    }
+
+
 def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
     def section(name: str) -> dict[str, Any]:
         value = payload.get(name, {})
@@ -501,6 +521,13 @@ def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
         work_periods = [item.strip() for item in work_periods_raw.replace("，", ",").split(",") if item.strip()]
     else:
         work_periods = work_periods_raw
+    fullscreen_apps_raw = recording.get("fullscreen_skip_apps", [])
+    if isinstance(fullscreen_apps_raw, str):
+        fullscreen_skip_apps = [
+            item.strip() for item in fullscreen_apps_raw.replace("，", ",").split(",") if item.strip()
+        ]
+    else:
+        fullscreen_skip_apps = fullscreen_apps_raw
 
     return {
         "llm": {
@@ -522,6 +549,9 @@ def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "short_poll_interval_seconds": int(recording.get("short_poll_interval_seconds", 5)),
             "idle_skip_minutes": int(recording.get("idle_skip_minutes", 10)),
             "enable_tray": bool(recording.get("enable_tray", False)),
+            "skip_when_screen_locked": bool(recording.get("skip_when_screen_locked", True)),
+            "skip_own_windows": bool(recording.get("skip_own_windows", True)),
+            "fullscreen_skip_apps": fullscreen_skip_apps,
         },
         "storage": {
             "data_dir": str(storage.get("data_dir", "data")).strip(),

@@ -43,6 +43,9 @@ class RecordingSettings(BaseModel):
     short_poll_interval_seconds: int = Field(default=5, ge=1, le=60)
     idle_skip_minutes: int = Field(default=10, ge=0)
     enable_tray: bool = False
+    skip_when_screen_locked: bool = True
+    skip_own_windows: bool = True
+    fullscreen_skip_apps: list[str] = Field(default_factory=list)
 
     @field_validator("work_periods")
     @classmethod

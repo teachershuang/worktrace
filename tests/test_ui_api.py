@@ -248,6 +248,7 @@ storage:
                 current["recording"]["work_periods"] = "09:00-12:00,13:30-18:00"
                 current["recording"]["screenshot_interval_seconds"] = 120
                 current["recording"]["short_poll_interval_seconds"] = 3
+                current["recording"]["fullscreen_skip_apps"] = "vlc.exe,game.exe"
 
                 response = client.put("/api/config/editable", json=current)
 
@@ -259,11 +260,13 @@ storage:
                 self.assertIn("paddle_json", saved)
                 self.assertIn("screenshot_interval_seconds: 120", saved)
                 self.assertIn("short_poll_interval_seconds: 3", saved)
+                self.assertIn("vlc.exe", saved)
                 summary = client.get("/api/config/summary").json()
                 self.assertEqual(summary["llm"]["base_url"], "http://192.168.8.29:4000/v1")
                 self.assertEqual(summary["ocr"]["url"], "http://192.168.8.29:8866/ocr")
                 self.assertEqual(summary["recording"]["screenshot_interval_seconds"], 120)
                 self.assertEqual(summary["recording"]["short_poll_interval_seconds"], 3)
+                self.assertEqual(summary["recording"]["fullscreen_skip_apps"], ["vlc.exe", "game.exe"])
             finally:
                 logging.shutdown()
 

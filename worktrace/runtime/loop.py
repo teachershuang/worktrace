@@ -8,6 +8,7 @@ from datetime import datetime
 
 from worktrace.config.settings import AppSettings
 from worktrace.capture.idle import get_idle_seconds
+from worktrace.capture.foreground import evaluate_foreground
 from worktrace.runtime.recorder import WorkRecorder
 from worktrace.runtime.state import RuntimeStateStore
 from worktrace.runtime.time_windows import is_within_work_periods
@@ -60,6 +61,13 @@ class BackgroundRecorderLoop:
             if not status.in_work_period:
                 logger.info("outside configured work periods, skipping")
                 self._mark_loop_activity("skipped", "当前不在配置的工作时间段内", now)
+                self._sleep_short()
+                continue
+
+            foreground = evaluate_foreground(self.settings.recording)
+            if foreground.skip:
+                logger.info("foreground guard skipped record cycle: %s", foreground.reason)
+                self._mark_loop_activity("skipped", foreground.reason or "前台保护已跳过截图", now)
                 self._sleep_short()
                 continue
 

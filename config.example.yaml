@@ -19,6 +19,9 @@ recording:
   short_poll_interval_seconds: 5
   idle_skip_minutes: 10
   enable_tray: false
+  skip_when_screen_locked: true
+  skip_own_windows: true
+  fullscreen_skip_apps: []
 
 storage:
   data_dir: "data"

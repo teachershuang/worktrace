@@ -295,6 +295,9 @@ function fillConfigForm(config) {
   setFormValue("recording.short_poll_interval_seconds", config.recording.short_poll_interval_seconds);
   setFormValue("recording.idle_skip_minutes", config.recording.idle_skip_minutes);
   setFormValue("recording.enable_tray", config.recording.enable_tray);
+  setFormValue("recording.skip_when_screen_locked", config.recording.skip_when_screen_locked);
+  setFormValue("recording.skip_own_windows", config.recording.skip_own_windows);
+  setFormValue("recording.fullscreen_skip_apps", config.recording.fullscreen_skip_apps);
   setFormValue("storage.data_dir", config.storage.data_dir);
   setFormValue("storage.report_output_dir", config.storage.report_output_dir);
   setFormValue("storage.log_dir", config.storage.log_dir);
@@ -319,6 +322,9 @@ function collectConfigForm() {
       short_poll_interval_seconds: Number(readFormValue("recording.short_poll_interval_seconds")),
       idle_skip_minutes: Number(readFormValue("recording.idle_skip_minutes")),
       enable_tray: Boolean(readFormValue("recording.enable_tray")),
+      skip_when_screen_locked: Boolean(readFormValue("recording.skip_when_screen_locked")),
+      skip_own_windows: Boolean(readFormValue("recording.skip_own_windows")),
+      fullscreen_skip_apps: readFormValue("recording.fullscreen_skip_apps"),
     },
     storage: {
       data_dir: readFormValue("storage.data_dir"),
@@ -349,7 +355,9 @@ async function refresh() {
   setPill(els.statusPill, status.paused ? "已暂停" : runningText, mode);
   els.sideStatus.textContent = status.paused ? "暂停中" : runningText;
   els.recordState.textContent = status.paused ? "暂停中" : runningText;
-  els.recordCopy.textContent = status.in_work_period ? "处于配置的工作时间段" : "当前不在工作时间段";
+  els.recordCopy.textContent = status.foreground_guard?.skip
+    ? status.foreground_guard.reason
+    : status.in_work_period ? "处于配置的工作时间段" : "当前不在工作时间段";
   els.recordDot.style.background = status.loop_running && !status.paused ? "var(--green)" : "var(--amber)";
 
   const activity = renderActivitySummary(status.last_activity);
@@ -386,6 +394,8 @@ async function refreshSettings() {
     renderSettingItem("截图间隔", `${summary.recording.screenshot_interval_seconds}s`),
     renderSettingItem("状态轮询", `${summary.recording.short_poll_interval_seconds}s`),
     renderSettingItem("空闲跳过", `${summary.recording.idle_skip_minutes} 分钟`),
+    renderSettingItem("前台保护", summary.recording.skip_when_screen_locked ? "锁屏保护已启用" : "锁屏保护已关闭"),
+    renderSettingItem("全屏跳过", summary.recording.fullscreen_skip_apps.join("，") || "未配置"),
   ].join("");
   renderAutostart(autostart);
 }

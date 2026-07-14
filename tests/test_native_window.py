@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from worktrace.ui.native import (
     DESKTOP_WINDOW_HEIGHT,
@@ -8,6 +10,8 @@ from worktrace.ui.native import (
     DESKTOP_WINDOW_MIN_WIDTH,
     DESKTOP_WINDOW_WIDTH,
     NativeWindowLifecycle,
+    image_data_uri,
+    native_pet_html,
 )
 
 
@@ -41,6 +45,21 @@ class NativeWindowTests(unittest.TestCase):
 
         self.assertTrue(lifecycle.hide_to_tray())
         self.assertEqual(window.hidden_count, 0)
+
+    def test_native_pet_embeds_images_without_file_urls(self) -> None:
+        html = native_pet_html()
+
+        self.assertEqual(html.count("data:image/png;base64,"), 2)
+        self.assertNotIn("file:///", html)
+        self.assertIn("WorkTrace 助手", html)
+        self.assertIn("助手猫咪", html)
+        self.assertIn("待命中", html)
+
+    def test_image_data_uri_reports_missing_asset(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            missing = Path(temp_dir) / "missing.png"
+            with self.assertRaisesRegex(RuntimeError, "desktop pet asset unavailable"):
+                image_data_uri(missing)
 
 
 class FakeWindow:

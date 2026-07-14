@@ -46,6 +46,7 @@ data/             Runtime event/report state, not committed
 - [x] Runtime state and event files use in-process locks and atomic replacement for rewrite operations.
 - [x] Chinese timeline similarity uses character bigrams instead of treating a whole sentence as one token.
 - [x] Windows package excludes unrelated Qt, NumPy, MKL, SSH, and notebook dependencies.
+- [x] Native desktop pet embeds mascot images in its HTML so packaged WebView2 windows do not depend on `file:///` asset access.
 
 ## Real Test Record
 
@@ -61,6 +62,7 @@ data/             Runtime event/report state, not committed
 - [x] 2026-07-14 packaged `WorkTrace.exe` exposed both `WorkTrace` and `WorkTrace Pet` windows to Computer Use.
 - [x] 2026-07-14 packaged API start, pause, immediate stop, and config hot-reload loop restart all passed.
 - [x] 2026-07-14 packaged CLI offline doctor passed after the Windows bundle was reduced from 747.44 MB to 82.88 MB.
+- [x] 2026-07-14 rebuilt desktop pet exposed `WorkTrace 助手`, `助手猫咪`, and `待命中` in the packaged WebView accessibility tree.
 
 ## Findings Fixed During Review
 
@@ -73,6 +75,7 @@ data/             Runtime event/report state, not committed
 - [x] Fixed concurrent state/review writes and malformed JSONL lines breaking the local timeline.
 - [x] Fixed invalid OCR JSON bypassing the metadata-only fallback path.
 - [x] Fixed Chinese rule-based timeline similarity returning zero for related non-identical sentences.
+- [x] Fixed packaged native desktop pet opening an empty transparent WebView because local `file:///` mascot images were not reliably loaded.
 
 ## Known Gaps
 

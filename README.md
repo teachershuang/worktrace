@@ -178,7 +178,7 @@ dist/WorkTrace/
 创建发布压缩包：
 
 ```powershell
-7z a -t7z -mx=9 dist\WorkTrace-v0.3.1-windows-x64.7z .\dist\WorkTrace\*
+7z a -t7z -mx=9 dist\WorkTrace-v0.3.2-windows-x64.7z .\dist\WorkTrace\*
 ```
 
 ## 项目结构

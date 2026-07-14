@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import socket
 import threading
@@ -311,8 +312,9 @@ def loading_html() -> str:
 
 
 def native_pet_html() -> str:
-    mascot = (STATIC_ASSETS / "mascot" / "assistant-main.png").as_uri()
-    cat = (STATIC_ASSETS / "mascot" / "cat.png").as_uri()
+    # Inline pet assets so the transparent WebView never depends on file:// access.
+    mascot = image_data_uri(STATIC_ASSETS / "mascot" / "assistant-main.png")
+    cat = image_data_uri(STATIC_ASSETS / "mascot" / "cat.png")
     return f"""
 <!doctype html>
 <html lang="zh-CN">
@@ -385,3 +387,11 @@ def native_pet_html() -> str:
 </body>
 </html>
 """.strip()
+
+
+def image_data_uri(path: Path) -> str:
+    try:
+        payload = base64.b64encode(path.read_bytes()).decode("ascii")
+    except OSError as exc:
+        raise RuntimeError(f"desktop pet asset unavailable: {path}") from exc
+    return f"data:image/png;base64,{payload}"

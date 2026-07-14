@@ -119,6 +119,7 @@ recording:
     - "09:00-12:00"
     - "13:30-18:00"
   screenshot_interval_seconds: 300
+  short_poll_interval_seconds: 5
   idle_skip_minutes: 10
   enable_tray: false
 

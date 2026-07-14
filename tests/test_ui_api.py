@@ -3,15 +3,20 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
+import threading
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from worktrace.llm.client import LLMError
 from worktrace.timeline.store import EventStore
-from worktrace.ui.api import create_app, describe_runtime_error, latest_report_path
+from worktrace.runtime.state import RuntimeStateStore
+from worktrace.ui.api import ConsoleRuntime, create_app, describe_runtime_error, latest_report_path
 
 
 class ConsoleApiTests(unittest.TestCase):
@@ -160,6 +165,28 @@ storage:
             finally:
                 logging.shutdown()
 
+    def test_single_review_action_uses_selected_history_date(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+            store = EventStore(root / "data")
+            history_day = datetime.now().date().replace(day=1)
+            review = store.append_review(make_review_event("history"), history_day)
+
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.post(
+                    f"/api/review/{review['id']}/work",
+                    params={"day": history_day.isoformat()},
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["date"], history_day.isoformat())
+                self.assertEqual(store.load_review(history_day), [])
+                self.assertEqual(store.load_effective(history_day)[0]["id"], review["id"])
+            finally:
+                logging.shutdown()
+
     def test_diagnostics_endpoint_reports_local_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -220,6 +247,7 @@ storage:
                 current["ocr"]["protocol"] = "paddle_json"
                 current["recording"]["work_periods"] = "09:00-12:00,13:30-18:00"
                 current["recording"]["screenshot_interval_seconds"] = 120
+                current["recording"]["short_poll_interval_seconds"] = 3
 
                 response = client.put("/api/config/editable", json=current)
 
@@ -230,12 +258,45 @@ storage:
                 self.assertIn("http://192.168.8.29:4000/v1", saved)
                 self.assertIn("paddle_json", saved)
                 self.assertIn("screenshot_interval_seconds: 120", saved)
+                self.assertIn("short_poll_interval_seconds: 3", saved)
                 summary = client.get("/api/config/summary").json()
                 self.assertEqual(summary["llm"]["base_url"], "http://192.168.8.29:4000/v1")
                 self.assertEqual(summary["ocr"]["url"], "http://192.168.8.29:8866/ocr")
                 self.assertEqual(summary["recording"]["screenshot_interval_seconds"], 120)
+                self.assertEqual(summary["recording"]["short_poll_interval_seconds"], 3)
             finally:
                 logging.shutdown()
+
+    def test_console_runtime_stop_interrupts_sleeping_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            state_store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+            context = SimpleNamespace(settings=object(), recorder=object(), state_store=state_store)
+            runtime = ConsoleRuntime(context)
+
+            with patch("worktrace.ui.api.BackgroundRecorderLoop", InterruptibleFakeLoop):
+                self.assertTrue(runtime.start_loop())
+                started_at = time.perf_counter()
+                self.assertTrue(runtime.stop_loop(timeout=1.0))
+
+            self.assertLess(time.perf_counter() - started_at, 0.5)
+            self.assertFalse(runtime.loop_running())
+
+    def test_console_runtime_restarts_loop_after_context_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
+            first_state = RuntimeStateStore(Path(first_dir) / "runtime_state.json")
+            second_state = RuntimeStateStore(Path(second_dir) / "runtime_state.json")
+            first_context = SimpleNamespace(settings=object(), recorder=object(), state_store=first_state)
+            second_context = SimpleNamespace(settings=object(), recorder=object(), state_store=second_state)
+            runtime = ConsoleRuntime(first_context)
+
+            with patch("worktrace.ui.api.BackgroundRecorderLoop", InterruptibleFakeLoop):
+                runtime.start_loop()
+                first_state.pause()
+                restarted = runtime.replace_context(second_context)
+                self.assertTrue(restarted)
+                self.assertTrue(runtime.loop_running())
+                self.assertTrue(second_state.load().paused)
+                runtime.stop_loop(timeout=1.0)
 
 
 def write_test_config(root: Path) -> Path:
@@ -275,6 +336,14 @@ def make_review_event(title: str) -> dict:
             "skip_reason": None,
         },
     }
+
+
+class InterruptibleFakeLoop:
+    def __init__(self, _settings, _recorder, _state_store, stop_event: threading.Event):
+        self.stop_event = stop_event
+
+    def run_forever(self) -> None:
+        self.stop_event.wait(30)
 
 
 if __name__ == "__main__":

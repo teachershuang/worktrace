@@ -191,6 +191,7 @@
               <legend>记录策略</legend>
               <label>工作时段 <input name="recording.work_periods" placeholder="09:00-12:00,13:30-18:00" /></label>
               <label>截图间隔秒数 <input name="recording.screenshot_interval_seconds" type="number" min="1" step="1" /></label>
+              <label>暂停/跳过轮询秒数 <input name="recording.short_poll_interval_seconds" type="number" min="1" max="60" step="1" /></label>
               <label>空闲跳过分钟 <input name="recording.idle_skip_minutes" type="number" min="0" step="1" /></label>
               <label class="checkbox-row"><input name="recording.enable_tray" type="checkbox" /> 启用托盘后台模式</label>
             </fieldset>

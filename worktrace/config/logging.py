@@ -15,6 +15,8 @@ def setup_logging(log_dir: Path, verbose: bool = False) -> None:
 
     root = logging.getLogger()
     root.setLevel(level)
+    for handler in root.handlers:
+        handler.close()
     root.handlers.clear()
 
     console = logging.StreamHandler()

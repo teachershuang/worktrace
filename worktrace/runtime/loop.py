@@ -37,7 +37,6 @@ class BackgroundRecorderLoop:
         self.periods = settings.recording.parsed_periods()
 
     def run_forever(self) -> None:
-        self.state_store.start()
         logger.info("WorkTrace background recorder started")
         while not self.stop_event.is_set():
             state = self.state_store.load()
@@ -81,7 +80,7 @@ class BackgroundRecorderLoop:
             self._sleep(self.settings.recording.screenshot_interval_seconds)
 
     def _sleep_short(self) -> None:
-        self._sleep(30)
+        self._sleep(self.settings.recording.short_poll_interval_seconds)
 
     def _sleep(self, seconds: float) -> None:
         self.stop_event.wait(seconds)

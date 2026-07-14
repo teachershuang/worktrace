@@ -332,15 +332,7 @@ def review_mark_work(
     settings = load_settings_or_exit(config, verbose=verbose)
     store = EventStore(settings.storage.data_dir)
     day = datetime.now().date()
-    event, remaining = pop_review_item(store, day, event_id_prefix)
-    classification = dict(event.get("classification", {}))
-    classification["should_record"] = True
-    classification["is_work"] = True
-    classification["need_review"] = False
-    classification["skip_reason"] = None
-    event["classification"] = classification
-    store.replace_review(day, remaining)
-    store.append_effective(event, day)
+    event = resolve_review_item_or_exit(store, day, event_id_prefix, as_work=True)
     console.print(f"[green]Marked as work:[/green] {event.get('id')}")
 
 
@@ -356,8 +348,7 @@ def review_mark_nonwork(
     settings = load_settings_or_exit(config, verbose=verbose)
     store = EventStore(settings.storage.data_dir)
     day = datetime.now().date()
-    event, remaining = pop_review_item(store, day, event_id_prefix)
-    store.replace_review(day, remaining)
+    event = resolve_review_item_or_exit(store, day, event_id_prefix, as_work=False)
     console.print(f"[yellow]Marked as non-work:[/yellow] {event.get('id')}")
 
 
@@ -398,6 +389,7 @@ def start_recording(
 ) -> None:
     """Start the foreground background recording loop."""
     context = build_app_context(config, verbose=verbose)
+    context.state_store.start()
     console.print("[green]WorkTrace recording loop started.[/green] Press Ctrl+C to exit.")
     try:
         BackgroundRecorderLoop(context.settings, context.recorder, context.state_store).run_forever()
@@ -516,18 +508,15 @@ def autostart_disable(
     console.print(f"[yellow]Autostart disabled:[/yellow] {status.startup_file}")
 
 
-def pop_review_item(store: EventStore, day, event_id_prefix: str):
-    events = store.load_review(day)
-    matches = [event for event in events if str(event.get("id", "")).startswith(event_id_prefix)]
-    if not matches:
+def resolve_review_item_or_exit(store: EventStore, day, event_id_prefix: str, *, as_work: bool):
+    try:
+        return store.resolve_review_item(day, event_id_prefix, as_work=as_work)
+    except LookupError:
         console.print(f"[red]No review event matches:[/red] {event_id_prefix}")
         raise typer.Exit(code=1)
-    if len(matches) > 1:
+    except ValueError:
         console.print(f"[red]Multiple review events match:[/red] {event_id_prefix}")
         raise typer.Exit(code=1)
-    selected = matches[0]
-    remaining = [event for event in events if event.get("id") != selected.get("id")]
-    return selected, remaining
 
 
 def module_available(module_name: str) -> bool:

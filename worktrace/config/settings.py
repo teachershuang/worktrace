@@ -40,6 +40,7 @@ class OCRSettings(BaseModel):
 class RecordingSettings(BaseModel):
     work_periods: list[str] = Field(default_factory=lambda: ["09:00-12:00", "13:30-18:00"])
     screenshot_interval_seconds: int = Field(default=300, gt=0)
+    short_poll_interval_seconds: int = Field(default=5, ge=1, le=60)
     idle_skip_minutes: int = Field(default=10, ge=0)
     enable_tray: bool = False
 

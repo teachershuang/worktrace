@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -146,6 +147,63 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertEqual(state.last_activity_status, "skipped")
             self.assertEqual(state.last_activity_reason, "当前不在配置的工作时间段内")
             self.assertEqual(state.last_event_id, "evt-1")
+
+    def test_runtime_state_remains_valid_during_concurrent_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RuntimeStateStore(Path(temp_dir) / "runtime_state.json")
+
+            def update_flags() -> None:
+                for _ in range(50):
+                    store.pause()
+                    store.resume()
+
+            def update_activity() -> None:
+                for index in range(50):
+                    store.mark_activity(
+                        status="recorded",
+                        reason=f"event-{index}",
+                        occurred_at="2026-07-14T14:30:00",
+                    )
+
+            threads = [threading.Thread(target=update_flags), threading.Thread(target=update_activity)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            state = store.load()
+            self.assertFalse(state.paused)
+            self.assertEqual(state.last_activity_status, "recorded")
+            self.assertTrue((state.last_activity_reason or "").startswith("event-"))
+
+    def test_event_store_skips_malformed_jsonl_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EventStore(Path(temp_dir))
+            day = datetime(2026, 7, 14).date()
+            valid = store.append_effective({"captured_at": "2026-07-14T10:00:00"}, day)
+            with store.paths_for(day).effective.open("a", encoding="utf-8") as file:
+                file.write("{broken json\n")
+
+            self.assertEqual(store.load_effective(day), [valid])
+
+    def test_review_resolution_is_atomic_and_updates_classification(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EventStore(Path(temp_dir))
+            day = datetime(2026, 7, 14).date()
+            review = store.append_review(
+                {
+                    "captured_at": "2026-07-14T10:00:00",
+                    "classification": {"should_record": False, "is_work": False, "need_review": True},
+                },
+                day,
+            )
+
+            resolved = store.resolve_review_item(day, review["id"][:10], as_work=True)
+
+            self.assertEqual(store.load_review(day), [])
+            self.assertEqual(store.load_effective(day), [resolved])
+            self.assertTrue(resolved["classification"]["should_record"])
+            self.assertFalse(resolved["classification"]["need_review"])
 
     def test_recorder_marks_effective_event_activity(self) -> None:
         captured_at = datetime(2026, 6, 18, 10, 8, 0)

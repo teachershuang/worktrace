@@ -37,6 +37,7 @@ class ConsoleRuntime:
         with self._lock:
             if self._loop_thread and self._loop_thread.is_alive():
                 return False
+            self.context.state_store.clear_stop()
             self._stop_event = threading.Event()
             loop = BackgroundRecorderLoop(
                 self.context.settings,
@@ -53,19 +54,28 @@ class ConsoleRuntime:
 
     def stop_loop(self, timeout: float = 3.0) -> bool:
         with self._lock:
+            self.context.state_store.request_stop()
             if not self._loop_thread or not self._loop_thread.is_alive():
                 return True
-            self.context.state_store.request_stop()
             if self._stop_event is not None:
                 self._stop_event.set()
             thread = self._loop_thread
         thread.join(timeout=timeout)
         return not thread.is_alive()
 
-    def replace_context(self, context: AppContext) -> None:
+    def replace_context(self, context: AppContext) -> bool:
+        was_running = self.loop_running()
+        was_paused = self.context.state_store.load().paused
         self.stop_loop(timeout=3.0)
         with self._lock:
             self.context = context
+        if not was_running:
+            return False
+        if was_paused:
+            context.state_store.pause()
+        else:
+            context.state_store.resume()
+        return self.start_loop()
 
     def record_service_check(self, name: str, *, ok: bool, message: str, elapsed_ms: int) -> None:
         self.service_checks[name] = {
@@ -100,6 +110,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "now": now.isoformat(timespec="seconds"),
             "work_periods": context.settings.recording.work_periods,
             "screenshot_interval_seconds": context.settings.recording.screenshot_interval_seconds,
+            "short_poll_interval_seconds": context.settings.recording.short_poll_interval_seconds,
             "ocr_consecutive_failures": context.recorder.consecutive_ocr_failures,
             "idle_seconds": get_idle_seconds(),
             "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
@@ -126,6 +137,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "recording": {
                 "work_periods": settings.recording.work_periods,
                 "screenshot_interval_seconds": settings.recording.screenshot_interval_seconds,
+                "short_poll_interval_seconds": settings.recording.short_poll_interval_seconds,
                 "idle_skip_minutes": settings.recording.idle_skip_minutes,
                 "enable_tray": settings.recording.enable_tray,
             },
@@ -164,6 +176,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "recording": {
                 "work_periods": settings.recording.work_periods,
                 "screenshot_interval_seconds": settings.recording.screenshot_interval_seconds,
+                "short_poll_interval_seconds": settings.recording.short_poll_interval_seconds,
                 "idle_skip_minutes": settings.recording.idle_skip_minutes,
                 "enable_tray": settings.recording.enable_tray,
             },
@@ -193,14 +206,15 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             next_context = build_app_context(config_path, verbose=verbose)
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"配置已写入，但热更新失败，请重启 WorkTrace: {exc}") from exc
-        runtime.replace_context(next_context)
+        loop_restarted = runtime.replace_context(next_context)
         context = next_context
         return {
             "saved": True,
             "reloaded": True,
             "path": str(config_path),
             "restart_required": False,
-            "message": "配置已保存，重启 WorkTrace 后生效。",
+            "loop_restarted": loop_restarted,
+            "message": "配置已保存并立即生效。",
         }
 
     @app.get("/api/autostart")
@@ -246,8 +260,8 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
 
     @app.post("/api/stop")
     def stop() -> dict[str, bool]:
-        context.state_store.request_stop()
-        return {"stop_requested": True}
+        stopped = runtime.stop_loop()
+        return {"stop_requested": True, "stopped": stopped}
 
     @app.post("/api/record-once")
     def record_once() -> dict[str, Any]:
@@ -272,16 +286,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         payload = payload or {}
         ids = normalize_id_list(payload.get("ids"))
         target_day = parse_day(payload.get("date"))
-        moved, remaining = split_review_items(context.store.load_review(target_day), ids)
-        for event in moved:
-            classification = dict(event.get("classification", {}))
-            classification["should_record"] = True
-            classification["is_work"] = True
-            classification["need_review"] = False
-            classification["skip_reason"] = None
-            event["classification"] = classification
-            context.store.append_effective(event, target_day)
-        context.store.replace_review(target_day, remaining)
+        moved = context.store.resolve_reviews(target_day, ids, as_work=True)
         return {"marked": "work", "count": len(moved), "date": target_day.isoformat()}
 
     @app.post("/api/review/bulk/nonwork")
@@ -289,29 +294,20 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         payload = payload or {}
         ids = normalize_id_list(payload.get("ids"))
         target_day = parse_day(payload.get("date"))
-        moved, remaining = split_review_items(context.store.load_review(target_day), ids)
-        context.store.replace_review(target_day, remaining)
+        moved = context.store.resolve_reviews(target_day, ids, as_work=False)
         return {"marked": "nonwork", "count": len(moved), "date": target_day.isoformat()}
 
     @app.post("/api/review/{event_id_prefix}/work")
-    def review_mark_work(event_id_prefix: str) -> dict[str, Any]:
-        event, remaining = pop_review_item(context, event_id_prefix)
-        classification = dict(event.get("classification", {}))
-        classification["should_record"] = True
-        classification["is_work"] = True
-        classification["need_review"] = False
-        classification["skip_reason"] = None
-        event["classification"] = classification
-        today = datetime.now().date()
-        context.store.replace_review(today, remaining)
-        context.store.append_effective(event, today)
-        return {"id": event.get("id"), "marked": "work"}
+    def review_mark_work(event_id_prefix: str, day: str | None = Query(default=None)) -> dict[str, Any]:
+        target_day = parse_day(day)
+        event = resolve_review_item(context, target_day, event_id_prefix, as_work=True)
+        return {"id": event.get("id"), "marked": "work", "date": target_day.isoformat()}
 
     @app.post("/api/review/{event_id_prefix}/nonwork")
-    def review_mark_nonwork(event_id_prefix: str) -> dict[str, Any]:
-        event, remaining = pop_review_item(context, event_id_prefix)
-        context.store.replace_review(datetime.now().date(), remaining)
-        return {"id": event.get("id"), "marked": "nonwork"}
+    def review_mark_nonwork(event_id_prefix: str, day: str | None = Query(default=None)) -> dict[str, Any]:
+        target_day = parse_day(day)
+        event = resolve_review_item(context, target_day, event_id_prefix, as_work=False)
+        return {"id": event.get("id"), "marked": "nonwork", "date": target_day.isoformat()}
 
     @app.post("/api/reports/daily")
     def daily_report() -> dict[str, str]:
@@ -454,23 +450,6 @@ def normalize_id_list(value: Any) -> list[str]:
     return value
 
 
-def split_review_items(items: list[dict[str, Any]], ids: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    if not items:
-        return [], []
-    if not ids:
-        return items, []
-
-    selected: list[dict[str, Any]] = []
-    remaining: list[dict[str, Any]] = []
-    for event in items:
-        event_id = str(event.get("id", ""))
-        if any(event_id.startswith(prefix) for prefix in ids):
-            selected.append(event)
-        else:
-            remaining.append(event)
-    return selected, remaining
-
-
 def is_writable_dir(path: Path) -> bool:
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -482,17 +461,19 @@ def is_writable_dir(path: Path) -> bool:
         return False
 
 
-def pop_review_item(context: AppContext, event_id_prefix: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    today = datetime.now().date()
-    events = context.store.load_review(today)
-    matches = [event for event in events if str(event.get("id", "")).startswith(event_id_prefix)]
-    if not matches:
-        raise HTTPException(status_code=404, detail=f"No review event matches {event_id_prefix}")
-    if len(matches) > 1:
-        raise HTTPException(status_code=409, detail=f"Multiple review events match {event_id_prefix}")
-    selected = matches[0]
-    remaining = [event for event in events if event.get("id") != selected.get("id")]
-    return selected, remaining
+def resolve_review_item(
+    context: AppContext,
+    day: date,
+    event_id_prefix: str,
+    *,
+    as_work: bool,
+) -> dict[str, Any]:
+    try:
+        return context.store.resolve_review_item(day, event_id_prefix, as_work=as_work)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=f"No review event matches {event_id_prefix}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=f"Multiple review events match {event_id_prefix}") from exc
 
 
 def runtime_state_payload(state) -> dict[str, Any]:
@@ -538,6 +519,7 @@ def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "recording": {
             "work_periods": work_periods,
             "screenshot_interval_seconds": int(recording.get("screenshot_interval_seconds", 300)),
+            "short_poll_interval_seconds": int(recording.get("short_poll_interval_seconds", 5)),
             "idle_skip_minutes": int(recording.get("idle_skip_minutes", 10)),
             "enable_tray": bool(recording.get("enable_tray", False)),
         },

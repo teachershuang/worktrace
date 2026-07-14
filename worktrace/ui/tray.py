@@ -26,6 +26,7 @@ class TrayRuntime:
         self.port = port
         self.context: AppContext = build_app_context(config_path, verbose=verbose)
         self._record_thread: threading.Thread | None = None
+        self._record_stop_event: threading.Event | None = None
         self._console_thread: threading.Thread | None = None
         self._lock = threading.Lock()
 
@@ -35,9 +36,16 @@ class TrayRuntime:
 
     def start_recording(self) -> None:
         with self._lock:
+            self.context.state_store.start()
             if self._record_thread and self._record_thread.is_alive():
                 return
-            loop = BackgroundRecorderLoop(self.context.settings, self.context.recorder, self.context.state_store)
+            self._record_stop_event = threading.Event()
+            loop = BackgroundRecorderLoop(
+                self.context.settings,
+                self.context.recorder,
+                self.context.state_store,
+                stop_event=self._record_stop_event,
+            )
             self._record_thread = threading.Thread(target=loop.run_forever, daemon=True, name="worktrace-recorder")
             self._record_thread.start()
 
@@ -48,7 +56,7 @@ class TrayRuntime:
         self.context.state_store.pause()
 
     def resume(self) -> None:
-        self.context.state_store.resume()
+        self.start_recording()
 
     def record_once(self) -> None:
         self._run_async(self.context.recorder.record_once, "record-once")
@@ -74,6 +82,8 @@ class TrayRuntime:
 
     def shutdown(self) -> None:
         self.context.state_store.request_stop()
+        if self._record_stop_event is not None:
+            self._record_stop_event.set()
 
     def pet_status(self) -> DesktopPetStatus:
         state = self.context.state_store.load()

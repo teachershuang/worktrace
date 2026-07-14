@@ -292,6 +292,7 @@ function fillConfigForm(config) {
   setFormValue("ocr.timeout_seconds", config.ocr.timeout_seconds);
   setFormValue("recording.work_periods", config.recording.work_periods);
   setFormValue("recording.screenshot_interval_seconds", config.recording.screenshot_interval_seconds);
+  setFormValue("recording.short_poll_interval_seconds", config.recording.short_poll_interval_seconds);
   setFormValue("recording.idle_skip_minutes", config.recording.idle_skip_minutes);
   setFormValue("recording.enable_tray", config.recording.enable_tray);
   setFormValue("storage.data_dir", config.storage.data_dir);
@@ -315,6 +316,7 @@ function collectConfigForm() {
     recording: {
       work_periods: readFormValue("recording.work_periods"),
       screenshot_interval_seconds: Number(readFormValue("recording.screenshot_interval_seconds")),
+      short_poll_interval_seconds: Number(readFormValue("recording.short_poll_interval_seconds")),
       idle_skip_minutes: Number(readFormValue("recording.idle_skip_minutes")),
       enable_tray: Boolean(readFormValue("recording.enable_tray")),
     },
@@ -382,6 +384,7 @@ async function refreshSettings() {
     renderSettingItem("OCR 协议", summary.ocr.protocol),
     renderSettingItem("工作时段", summary.recording.work_periods.join("，")),
     renderSettingItem("截图间隔", `${summary.recording.screenshot_interval_seconds}s`),
+    renderSettingItem("状态轮询", `${summary.recording.short_poll_interval_seconds}s`),
     renderSettingItem("空闲跳过", `${summary.recording.idle_skip_minutes} 分钟`),
   ].join("");
   renderAutostart(autostart);
@@ -590,8 +593,8 @@ document.addEventListener("click", event => {
     }
     postJson("/api/review/bulk/nonwork", { ids: [...selectedReviewIds], date: selectedReviewDate() }, "已批量标记为非工作", target);
   }
-  if (reviewWork) post(`/api/review/${reviewWork}/work`, "已标记为工作", target);
-  if (reviewNonwork) post(`/api/review/${reviewNonwork}/nonwork`, "已标记为非工作", target);
+  if (reviewWork) post(`/api/review/${reviewWork}/work?day=${encodeURIComponent(selectedReviewDate())}`, "已标记为工作", target);
+  if (reviewNonwork) post(`/api/review/${reviewNonwork}/nonwork?day=${encodeURIComponent(selectedReviewDate())}`, "已标记为非工作", target);
 });
 
 document.addEventListener("change", event => {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,8 +21,13 @@ class RuntimeStateStore:
     def __init__(self, path: Path):
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
 
     def load(self) -> RuntimeState:
+        with self._lock:
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> RuntimeState:
         if not self.path.exists():
             return RuntimeState()
         try:
@@ -38,30 +44,41 @@ class RuntimeStateStore:
         )
 
     def save(self, state: RuntimeState) -> None:
-        self.path.write_text(
+        with self._lock:
+            self._save_unlocked(state)
+
+    def _save_unlocked(self, state: RuntimeState) -> None:
+        temporary_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        temporary_path.write_text(
             json.dumps(state.__dict__, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        temporary_path.replace(self.path)
 
     def pause(self) -> None:
-        current = self.load()
-        self.save(with_state_flags(current, paused=True, stop_requested=current.stop_requested))
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(with_state_flags(current, paused=True, stop_requested=current.stop_requested))
 
     def resume(self) -> None:
-        current = self.load()
-        self.save(with_state_flags(current, paused=False, stop_requested=current.stop_requested))
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(with_state_flags(current, paused=False, stop_requested=current.stop_requested))
 
     def start(self) -> None:
-        current = self.load()
-        self.save(with_state_flags(current, paused=False, stop_requested=False))
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(with_state_flags(current, paused=False, stop_requested=False))
 
     def request_stop(self) -> None:
-        current = self.load()
-        self.save(with_state_flags(current, paused=current.paused, stop_requested=True))
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(with_state_flags(current, paused=current.paused, stop_requested=True))
 
     def clear_stop(self) -> None:
-        current = self.load()
-        self.save(with_state_flags(current, paused=current.paused, stop_requested=False))
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(with_state_flags(current, paused=current.paused, stop_requested=False))
 
     def mark_activity(
         self,
@@ -71,17 +88,18 @@ class RuntimeStateStore:
         occurred_at: str,
         event_id: str | None = None,
     ) -> None:
-        current = self.load()
-        self.save(
-            RuntimeState(
-                paused=current.paused,
-                stop_requested=current.stop_requested,
-                last_activity_at=occurred_at,
-                last_activity_status=status,
-                last_activity_reason=reason,
-                last_event_id=event_id,
+        with self._lock:
+            current = self._load_unlocked()
+            self._save_unlocked(
+                RuntimeState(
+                    paused=current.paused,
+                    stop_requested=current.stop_requested,
+                    last_activity_at=occurred_at,
+                    last_activity_status=status,
+                    last_activity_reason=reason,
+                    last_event_id=event_id,
+                )
             )
-        )
 
 
 def optional_str(value: Any) -> str | None:

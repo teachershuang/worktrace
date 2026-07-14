@@ -20,29 +20,55 @@ hiddenimports = [
     "PIL._tkinter_finder",
     "win32timezone",
     "clr",
+    "webview.platforms.winforms",
+    "webview.platforms.edgechromium",
+    "webview.platforms.mshtml",
 ]
-hiddenimports += collect_submodules("webview")
 hiddenimports += collect_submodules("pythonnet")
 hiddenimports += collect_submodules("clr_loader")
 hiddenimports += collect_submodules("proxy_tools")
 
 excludes = [
     "alabaster",
+    "bcrypt",
+    "cryptography",
     "docutils",
     "IPython",
+    "ipywidgets",
+    "invoke",
+    "jupyter_client",
     "jupyter",
     "matplotlib",
     "notebook",
+    "numpy",
     "numpy.f2py",
+    "mypy",
+    "nacl",
+    "OpenSSL",
     "pandas",
+    "paramiko",
+    "PyQt5",
+    "PyQt6",
+    "PySide2",
+    "PySide6",
+    "qtpy",
     "pip",
     "pytest",
     "scipy",
     "setuptools.tests",
     "sphinx",
+    "tornado",
+    "traitlets",
+    "twisted",
     "tkinter.test",
     "unittest.test",
     "wheel",
+    "zmq",
+    "webview.platforms.android",
+    "webview.platforms.cef",
+    "webview.platforms.cocoa",
+    "webview.platforms.gtk",
+    "webview.platforms.qt",
 ]
 
 

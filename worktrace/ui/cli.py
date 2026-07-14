@@ -34,6 +34,15 @@ DESKTOP_CONFIG_NAME = "config.yaml"
 DESKTOP_CONFIG_EXAMPLES = ("config.example.yaml", "config.lan.example.yaml")
 
 
+@app.callback(invoke_without_command=True)
+def cli_root(
+    version: bool = typer.Option(False, "--version", help="Show WorkTrace version and exit.", is_eager=True),
+) -> None:
+    if version:
+        typer.echo(f"WorkTrace {__version__}")
+        raise typer.Exit()
+
+
 def load_settings_or_exit(config: Path, verbose: bool = False):
     try:
         settings = load_config(config)

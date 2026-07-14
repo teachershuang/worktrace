@@ -5,10 +5,19 @@ import unittest
 from pathlib import Path
 import sys
 
-from worktrace.ui.cli import default_desktop_config_path
+from typer.testing import CliRunner
+
+from worktrace import __version__
+from worktrace.ui.cli import app, default_desktop_config_path
 
 
 class DesktopEntryTests(unittest.TestCase):
+    def test_cli_exposes_version(self) -> None:
+        result = CliRunner().invoke(app, ["--version"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn(f"WorkTrace {__version__}", result.stdout)
+
     def test_default_desktop_config_prefers_real_config(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

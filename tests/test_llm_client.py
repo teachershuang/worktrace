@@ -27,6 +27,21 @@ class LLMClientTests(unittest.TestCase):
         self.assertIn("llm.api_key", message)
         self.assertNotIn("chat/completions", message)
 
+    def test_invalid_gateway_json_is_reported_as_llm_error(self) -> None:
+        client = LLMClient(
+            LLMSettings(
+                base_url="http://127.0.0.1:4000/v1",
+                api_key="test-key",
+                model="test-model",
+            )
+        )
+
+        with patch("worktrace.llm.client.httpx.Client", return_value=FakeClient(200, "not-json")):
+            ok, message = client.test_connection()
+
+        self.assertFalse(ok)
+        self.assertIn("invalid JSON", message)
+
 
 class FakeClient:
     def __init__(self, status_code: int, text: str):

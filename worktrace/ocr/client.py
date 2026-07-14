@@ -43,7 +43,7 @@ class OCRClient:
 
         content_type = response.headers.get("content-type", "")
         if "application/json" in content_type:
-            data = response.json()
+            data = parse_ocr_json(response)
             return OCRResult(text=extract_ocr_text(data), raw=data)
 
         return OCRResult(text=response.text.strip(), raw={"text": response.text})
@@ -71,7 +71,7 @@ class OCRClient:
             logger.exception("OCR request failed")
             raise OCRError(f"OCR request failed: {exc}") from exc
 
-        data = response.json()
+        data = parse_ocr_json(response)
         return OCRResult(text=extract_ocr_text(data), raw=data)
 
     def test_connection(self) -> tuple[bool, str]:
@@ -165,6 +165,16 @@ def extract_ocr_text(data: dict[str, Any]) -> str:
             return "\n".join(parts).strip()
 
     return ""
+
+
+def parse_ocr_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise OCRError(f"OCR returned invalid JSON: {response.text[:200]}") from exc
+    if not isinstance(data, dict):
+        raise OCRError(f"OCR returned an unexpected JSON value: {type(data).__name__}")
+    return data
 
 
 def paddle_health_url(ocr_url: str) -> str:

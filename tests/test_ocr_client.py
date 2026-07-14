@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from worktrace.ocr.client import extract_ocr_text, paddle_health_url
+import httpx
+
+from worktrace.ocr.client import OCRError, extract_ocr_text, paddle_health_url, parse_ocr_json
 
 
 class OCRClientTests(unittest.TestCase):
@@ -31,6 +33,16 @@ class OCRClientTests(unittest.TestCase):
             paddle_health_url("http://192.168.8.29:8866/ocr"),
             "http://192.168.8.29:8866/health",
         )
+
+    def test_invalid_ocr_json_becomes_fallback_error(self) -> None:
+        response = httpx.Response(
+            200,
+            text="gateway returned html",
+            request=httpx.Request("POST", "http://127.0.0.1/ocr"),
+        )
+
+        with self.assertRaisesRegex(OCRError, "invalid JSON"):
+            parse_ocr_json(response)
         self.assertEqual(
             paddle_health_url("http://192.168.8.29:8866"),
             "http://192.168.8.29:8866/health",

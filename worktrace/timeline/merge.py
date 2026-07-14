@@ -93,6 +93,9 @@ def text_similarity(left: str, right: str) -> float:
 
 def tokenize(text: str) -> set[str]:
     compact = "".join(ch.lower() if ch.isalnum() else " " for ch in text)
+    if any("\u4e00" <= ch <= "\u9fff" for ch in compact):
+        joined = "".join(compact.split())
+        return {joined[index : index + 2] for index in range(max(len(joined) - 1, 0))}
     words = {word for word in compact.split() if len(word) >= 2}
     if words:
         return words

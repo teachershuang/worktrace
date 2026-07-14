@@ -66,7 +66,10 @@ class LLMClient:
             logger.exception("LLM request failed")
             raise LLMError(f"LLM request failed: {exc}") from exc
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise LLMError(f"LLM returned invalid JSON: {response.text[:300]}") from exc
         try:
             return str(data["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:

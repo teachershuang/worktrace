@@ -46,7 +46,9 @@ data/             Runtime event/report state, not committed
 - [x] Runtime state and event files use in-process locks and atomic replacement for rewrite operations.
 - [x] Chinese timeline similarity uses character bigrams instead of treating a whole sentence as one token.
 - [x] Windows package excludes unrelated Qt, NumPy, MKL, SSH, and notebook dependencies.
-- [x] Native desktop pet embeds mascot images in its HTML so packaged WebView2 windows do not depend on `file:///` asset access.
+- [x] Native desktop pet loads mascot images from the same local FastAPI origin so packaged WebView2 windows do not depend on `file:///` asset access.
+- [x] Native desktop pet polls the local runtime and shows recording, paused, pending review, waiting, standby, and service error states.
+- [x] Clicking the native desktop pet opens a compact action panel for start/resume, pause, record once, daily report, and opening the full console.
 
 ## Real Test Record
 
@@ -63,6 +65,8 @@ data/             Runtime event/report state, not committed
 - [x] 2026-07-14 packaged API start, pause, immediate stop, and config hot-reload loop restart all passed.
 - [x] 2026-07-14 packaged CLI offline doctor passed after the Windows bundle was reduced from 747.44 MB to 82.88 MB.
 - [x] 2026-07-14 rebuilt desktop pet exposed `WorkTrace 助手`, `助手猫咪`, and `待命中` in the packaged WebView accessibility tree.
+- [x] 2026-07-15 packaged `0.4.0` desktop pet exposed its action controls to Computer Use and tracked `standby`, `recording`, `paused`, `review`, and `error` runtime states.
+- [x] 2026-07-15 packaged API state transitions passed for start/resume, pause, pending review count, and OCR service alert.
 
 ## Findings Fixed During Review
 
@@ -76,12 +80,12 @@ data/             Runtime event/report state, not committed
 - [x] Fixed invalid OCR JSON bypassing the metadata-only fallback path.
 - [x] Fixed Chinese rule-based timeline similarity returning zero for related non-identical sentences.
 - [x] Fixed packaged native desktop pet opening an empty transparent WebView because local `file:///` mascot images were not reliably loaded.
+- [x] Fixed pywebview recursively scanning native window objects by keeping bridge references private.
 
 ## Known Gaps
 
 - [ ] `config.lan.example.yaml` still contains a rejected LLM key for LiteLLM; real testing required a temporary local config using the actual LiteLLM master key. Do not commit real keys.
-- [ ] Computer Use can read the WebView accessibility tree, but screenshot capture and direct element clicking are unreliable for this pywebview/Edge WebView window on this machine.
-- [ ] The UI action path still needs a fully reliable desktop automation strategy beyond WebView accessibility inspection.
+- [ ] Computer Use can read the WebView accessibility tree, but screenshot capture and click injection remain unreliable for the transparent pywebview window on this machine; the native bridge and controls are present and unit tested.
 - [ ] The current workstation is on `172.16.16.0/24`; 2026-07-14 live retest of `192.168.8.29` OCR/LLM/SSH timed out until the LAN route is restored.
 - [ ] Meeting state and media playback detection are not yet part of Windows foreground guards.
 - [ ] Multi-monitor capture, region selection, and screenshot redaction are not implemented.
@@ -91,9 +95,8 @@ data/             Runtime event/report state, not committed
 ## Next Development Plan
 
 1. Add an installer and first-run setup wizard for OCR/LLM endpoints, API key, work periods, and optional autostart.
-2. Add a reliable native command bridge for pywebview so automated and manual UI tests do not depend on WebView element clicks.
-3. Persist service diagnostics history with OCR/LLM latency, HTTP status, retry count, and recent failures.
-4. Extend Windows foreground guards with meeting state and media playback rules.
-5. Add desktop pet notifications for review queue, OCR failures, and LLM authentication failures.
-6. Add multi-monitor capture, region selection, and screenshot redaction.
-7. Add a rich report editor with local version history.
+2. Persist service diagnostics history with OCR/LLM latency, HTTP status, retry count, and recent failures.
+3. Extend Windows foreground guards with meeting state and media playback rules.
+4. Add native desktop notifications for review queue and repeated service failures.
+5. Add multi-monitor capture, region selection, and screenshot redaction.
+6. Add a rich report editor with local version history.

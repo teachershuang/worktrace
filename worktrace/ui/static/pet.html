@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WorkTrace Pet</title>
+  <link rel="stylesheet" href="/static/pet.css" />
+  <script defer src="/static/pet.js"></script>
+</head>
+<body data-state="standby">
+  <main class="pet-shell">
+    <button
+      class="pet-stage pywebview-drag-region"
+      id="pet-toggle"
+      type="button"
+      aria-expanded="false"
+      aria-controls="quick-panel"
+      title="点击打开 WorkTrace 快捷面板，拖动可移动"
+    >
+      <span class="state-halo" aria-hidden="true"></span>
+      <img
+        class="assistant"
+        id="pet-assistant"
+        src="/static/assets/mascot/assistant-sidebar.png"
+        alt="WorkTrace 助手"
+      />
+      <img class="cat" src="/static/assets/mascot/cat.png" alt="助手猫咪" />
+      <span class="status-badge" id="pet-badge">待命中</span>
+    </button>
+
+    <section class="quick-panel" id="quick-panel" aria-label="WorkTrace 快捷操作" aria-hidden="true">
+      <header class="panel-header">
+        <div>
+          <span class="eyebrow">WORKTRACE</span>
+          <h1 id="panel-title">工作时段待命</h1>
+        </div>
+        <button class="icon-button" id="panel-close" type="button" aria-label="收起快捷面板">×</button>
+      </header>
+
+      <div class="status-card">
+        <span class="status-dot" aria-hidden="true"></span>
+        <div>
+          <strong id="panel-state">待命中</strong>
+          <p id="panel-detail">点击开始记录，WorkTrace 将在后台识别工作内容。</p>
+        </div>
+      </div>
+
+      <div class="metric-row">
+        <div class="metric">
+          <span>待确认</span>
+          <strong id="review-count">0</strong>
+        </div>
+        <div class="metric metric-wide">
+          <span>最近活动</span>
+          <strong id="last-activity">尚未记录</strong>
+        </div>
+      </div>
+
+      <div class="action-grid">
+        <button class="action primary" type="button" data-action="start">开始 / 恢复</button>
+        <button class="action" type="button" data-action="pause">暂停记录</button>
+        <button class="action" type="button" data-action="record">立即记录一次</button>
+        <button class="action" type="button" data-action="daily">生成今日日报</button>
+        <button class="action action-wide" type="button" data-action="console">打开完整控制台</button>
+      </div>
+
+      <p class="panel-tip">拖动左侧助手可移动位置。状态每 2.5 秒自动刷新。</p>
+      <div class="toast" id="pet-toast" role="status" aria-live="polite"></div>
+    </section>
+  </main>
+</body>
+</html>

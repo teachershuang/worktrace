@@ -15,8 +15,15 @@ from fastapi.testclient import TestClient
 
 from worktrace.llm.client import LLMError
 from worktrace.timeline.store import EventStore
-from worktrace.runtime.state import RuntimeStateStore
-from worktrace.ui.api import ConsoleRuntime, create_app, describe_runtime_error, latest_report_path
+from worktrace.runtime.state import RuntimeState, RuntimeStateStore
+from worktrace.ui.api import (
+    ConsoleRuntime,
+    create_app,
+    describe_runtime_error,
+    latest_report_path,
+    pet_state_payload,
+    service_alert_payload,
+)
 
 
 class ConsoleApiTests(unittest.TestCase):
@@ -230,8 +237,63 @@ storage:
                     sorted(payload["last_activity"].keys()),
                     ["at", "event_id", "reason", "status"],
                 )
+                self.assertEqual(payload["review_count"], 0)
+                self.assertFalse(payload["service_alert"]["active"])
+                self.assertEqual(payload["pet_state"]["kind"], "standby")
             finally:
                 logging.shutdown()
+
+    def test_desktop_pet_endpoint_serves_dynamic_client(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_path = write_test_config(Path(temp_dir))
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.get("/desktop-pet")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("WorkTrace Pet", response.text)
+                self.assertIn("/static/pet.js", response.text)
+                self.assertIn("开始 / 恢复", response.text)
+            finally:
+                logging.shutdown()
+
+    def test_pet_state_prioritizes_service_error_pause_and_review(self) -> None:
+        alert = service_alert_payload(
+            RuntimeState(),
+            ocr_consecutive_failures=2,
+            service_checks={"ocr": None, "llm": None},
+        )
+        self.assertEqual(alert["service"], "ocr")
+        self.assertEqual(
+            pet_state_payload(
+                loop_running=True,
+                paused=True,
+                in_work_period=True,
+                review_count=3,
+                service_alert=alert,
+            )["kind"],
+            "error",
+        )
+        self.assertEqual(
+            pet_state_payload(
+                loop_running=True,
+                paused=True,
+                in_work_period=True,
+                review_count=3,
+                service_alert={"active": False},
+            )["kind"],
+            "paused",
+        )
+        self.assertEqual(
+            pet_state_payload(
+                loop_running=True,
+                paused=False,
+                in_work_period=True,
+                review_count=3,
+                service_alert={"active": False},
+            )["kind"],
+            "review",
+        )
 
     def test_editable_config_can_update_service_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

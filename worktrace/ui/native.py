@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import logging
 import socket
 import threading
@@ -20,6 +19,8 @@ DESKTOP_WINDOW_WIDTH = 960
 DESKTOP_WINDOW_HEIGHT = 680
 DESKTOP_WINDOW_MIN_WIDTH = 720
 DESKTOP_WINDOW_MIN_HEIGHT = 520
+PET_COLLAPSED_SIZE = (176, 176)
+PET_EXPANDED_SIZE = (430, 420)
 
 
 @dataclass
@@ -74,6 +75,31 @@ class NativeWindowLifecycle:
         self.server_handle.stop()
 
 
+class NativePetBridge:
+    def __init__(self) -> None:
+        # pywebview recursively exposes public js_api attributes. Native window
+        # objects must stay private or its scanner descends into the UIA graph.
+        self._lifecycle: NativeWindowLifecycle | None = None
+        self._pet_window = None
+
+    def bind(self, lifecycle: NativeWindowLifecycle, pet_window) -> None:
+        self._lifecycle = lifecycle
+        self._pet_window = pet_window
+
+    def set_expanded(self, expanded: bool) -> dict[str, int | bool]:
+        if self._pet_window is None:
+            raise RuntimeError("desktop pet window is not ready")
+        width, height = PET_EXPANDED_SIZE if expanded else PET_COLLAPSED_SIZE
+        self._pet_window.resize(width, height)
+        return {"expanded": expanded, "width": width, "height": height}
+
+    def show_console(self) -> bool:
+        if self._lifecycle is None:
+            raise RuntimeError("desktop lifecycle is not ready")
+        self._lifecycle.show_window()
+        return True
+
+
 def launch_native_window(
     config_path: Path,
     host: str = "127.0.0.1",
@@ -83,6 +109,7 @@ def launch_native_window(
     import webview
 
     server_handle = start_local_server(config_path, host=host, preferred_port=port, verbose=verbose)
+    pet_bridge = NativePetBridge()
     window = webview.create_window(
         "WorkTrace",
         html=loading_html(),
@@ -95,20 +122,23 @@ def launch_native_window(
     )
     pet_window = webview.create_window(
         "WorkTrace Pet",
-        html=native_pet_html(),
-        width=176,
-        height=176,
+        url=f"{server_handle.url}/desktop-pet",
+        width=PET_COLLAPSED_SIZE[0],
+        height=PET_COLLAPSED_SIZE[1],
         x=32,
         y=180,
         resizable=False,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
         on_top=True,
         transparent=True,
         background_color="#00FF00",
+        text_select=False,
+        js_api=pet_bridge,
         confirm_close=False,
     )
     lifecycle = NativeWindowLifecycle(window, server_handle, pet_window=pet_window)
+    pet_bridge.bind(lifecycle, pet_window)
     tray_icon = create_native_tray_icon(lifecycle)
 
     def on_closed() -> None:
@@ -309,89 +339,3 @@ def loading_html() -> str:
 </body>
 </html>
 """.strip()
-
-
-def native_pet_html() -> str:
-    # Inline pet assets so the transparent WebView never depends on file:// access.
-    mascot = image_data_uri(STATIC_ASSETS / "mascot" / "assistant-main.png")
-    cat = image_data_uri(STATIC_ASSETS / "mascot" / "cat.png")
-    return f"""
-<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>WorkTrace Pet</title>
-  <style>
-    html, body {{
-      margin: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: transparent;
-      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-      user-select: none;
-    }}
-    .pet {{
-      width: 176px;
-      height: 176px;
-      display: grid;
-      place-items: center;
-      position: relative;
-      -webkit-app-region: drag;
-    }}
-    .bubble {{
-      position: absolute;
-      left: 28px;
-      bottom: 8px;
-      min-width: 92px;
-      padding: 7px 10px;
-      border-radius: 999px;
-      background: #dcf0df;
-      color: #2d7a3d;
-      border: 1px solid rgba(45, 122, 61, 0.16);
-      box-shadow: 0 10px 28px rgba(61, 46, 31, 0.14);
-      font-size: 12px;
-      font-weight: 800;
-      text-align: center;
-    }}
-    .assistant {{
-      width: 124px;
-      height: 124px;
-      object-fit: contain;
-      image-rendering: auto;
-      filter: drop-shadow(0 16px 22px rgba(65, 45, 24, 0.18));
-      animation: float 2.8s ease-in-out infinite;
-    }}
-    .cat {{
-      position: absolute;
-      right: 14px;
-      bottom: 26px;
-      width: 48px;
-      height: 48px;
-      object-fit: contain;
-      filter: drop-shadow(0 10px 14px rgba(65, 45, 24, 0.14));
-    }}
-    @keyframes float {{
-      0%, 100% {{ transform: translateY(0); }}
-      50% {{ transform: translateY(-5px); }}
-    }}
-  </style>
-</head>
-<body>
-  <div class="pet" title="WorkTrace 桌宠">
-    <img class="assistant" src="{mascot}" alt="WorkTrace 助手" />
-    <img class="cat" src="{cat}" alt="助手猫咪" />
-    <div class="bubble">待命中</div>
-  </div>
-</body>
-</html>
-""".strip()
-
-
-def image_data_uri(path: Path) -> str:
-    try:
-        payload = base64.b64encode(path.read_bytes()).decode("ascii")
-    except OSError as exc:
-        raise RuntimeError(f"desktop pet asset unavailable: {path}") from exc
-    return f"data:image/png;base64,{payload}"

@@ -99,16 +99,27 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
     def index() -> str:
         return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
 
+    @app.get("/desktop-pet", response_class=HTMLResponse)
+    def desktop_pet() -> str:
+        return (STATIC_DIR / "pet.html").read_text(encoding="utf-8")
+
     @app.get("/api/status")
     def status() -> dict[str, Any]:
         state = context.state_store.load()
         now = datetime.now()
         foreground = evaluate_foreground(context.settings.recording)
+        in_work_period = is_within_work_periods(now, context.settings.recording.parsed_periods())
+        review_count = len(context.store.load_review(now.date()))
+        service_alert = service_alert_payload(
+            state,
+            ocr_consecutive_failures=context.recorder.consecutive_ocr_failures,
+            service_checks=runtime.service_checks,
+        )
         return {
             "loop_running": runtime.loop_running(),
             "paused": state.paused,
             "stop_requested": state.stop_requested,
-            "in_work_period": is_within_work_periods(now, context.settings.recording.parsed_periods()),
+            "in_work_period": in_work_period,
             "now": now.isoformat(timespec="seconds"),
             "work_periods": context.settings.recording.work_periods,
             "screenshot_interval_seconds": context.settings.recording.screenshot_interval_seconds,
@@ -118,6 +129,15 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "idle_skip_minutes": context.settings.recording.idle_skip_minutes,
             "foreground_guard": foreground_payload(foreground),
             "last_activity": runtime_state_payload(state),
+            "review_count": review_count,
+            "service_alert": service_alert,
+            "pet_state": pet_state_payload(
+                loop_running=runtime.loop_running(),
+                paused=state.paused,
+                in_work_period=in_work_period,
+                review_count=review_count,
+                service_alert=service_alert,
+            ),
         }
 
     @app.get("/api/config/summary")
@@ -491,6 +511,95 @@ def runtime_state_payload(state) -> dict[str, Any]:
         "status": state.last_activity_status,
         "reason": state.last_activity_reason,
         "event_id": state.last_event_id,
+    }
+
+
+def service_alert_payload(
+    state,
+    *,
+    ocr_consecutive_failures: int,
+    service_checks: dict[str, dict[str, Any] | None],
+) -> dict[str, Any]:
+    if ocr_consecutive_failures > 0:
+        return {
+            "active": True,
+            "service": "ocr",
+            "label": "OCR 异常",
+            "message": f"OCR 已连续失败 {ocr_consecutive_failures} 次",
+        }
+
+    for service, label in (("ocr", "OCR 异常"), ("llm", "模型异常")):
+        check = service_checks.get(service)
+        if check and not check.get("ok", False):
+            return {
+                "active": True,
+                "service": service,
+                "label": label,
+                "message": str(check.get("message") or f"{label}，请检查配置"),
+            }
+
+    if state.last_activity_status == "failed":
+        reason = state.last_activity_reason or "最近一次记录失败"
+        lowered = reason.lower()
+        if "ocr" in lowered:
+            service, label = "ocr", "OCR 异常"
+        elif any(token in lowered for token in ("llm", "模型", "401", "认证")):
+            service, label = "llm", "模型异常"
+        else:
+            service, label = "runtime", "记录异常"
+        return {"active": True, "service": service, "label": label, "message": reason}
+
+    return {"active": False, "service": None, "label": None, "message": None}
+
+
+def pet_state_payload(
+    *,
+    loop_running: bool,
+    paused: bool,
+    in_work_period: bool,
+    review_count: int,
+    service_alert: dict[str, Any],
+) -> dict[str, str]:
+    if service_alert.get("active"):
+        return {
+            "kind": "error",
+            "label": str(service_alert.get("label") or "服务异常"),
+            "detail": str(service_alert.get("message") or "请打开控制台检查服务状态"),
+            "asset": "assistant-rest.png",
+        }
+    if paused:
+        return {
+            "kind": "paused",
+            "label": "已暂停",
+            "detail": "不会自动截图，点击桌宠可以恢复记录",
+            "asset": "assistant-rest.png",
+        }
+    if review_count > 0:
+        return {
+            "kind": "review",
+            "label": f"待确认 {review_count}",
+            "detail": f"有 {review_count} 条低置信度事件等待确认",
+            "asset": "assistant-sidebar.png",
+        }
+    if loop_running and in_work_period:
+        return {
+            "kind": "recording",
+            "label": "记录中",
+            "detail": "正在按配置周期识别工作内容",
+            "asset": "assistant-main.png",
+        }
+    if loop_running:
+        return {
+            "kind": "waiting",
+            "label": "等待工作时段",
+            "detail": "后台循环已启动，当前不会截图",
+            "asset": "assistant-tile.png",
+        }
+    return {
+        "kind": "standby",
+        "label": "待命中",
+        "detail": "点击桌宠打开快捷面板并开始记录",
+        "asset": "assistant-sidebar.png",
     }
 
 

@@ -49,6 +49,11 @@ data/             Runtime event/report state, not committed
 - [x] Native desktop pet loads mascot images from the same local FastAPI origin so packaged WebView2 windows do not depend on `file:///` asset access.
 - [x] Native desktop pet polls the local runtime and shows recording, paused, pending review, waiting, standby, and service error states.
 - [x] Clicking the native desktop pet opens a compact action panel for start/resume, pause, record once, daily report, and opening the full console.
+- [x] Desktop, browser-console, and tray entry points automatically start the recorder loop while preserving an existing paused state.
+- [x] Overlapping manual and scheduled recording cycles are rejected instead of producing duplicate events.
+- [x] Configuration, runtime state, review rewrites, and reports use atomic replacement; invalid hot-reload settings keep the previous config intact.
+- [x] The editable-config API masks the LLM API key and preserves it when the masked value is saved.
+- [x] Empty bulk-review requests are rejected and cannot resolve the whole queue accidentally.
 
 ## Real Test Record
 
@@ -67,6 +72,9 @@ data/             Runtime event/report state, not committed
 - [x] 2026-07-14 rebuilt desktop pet exposed `WorkTrace 助手`, `助手猫咪`, and `待命中` in the packaged WebView accessibility tree.
 - [x] 2026-07-15 packaged `0.4.0` desktop pet exposed its action controls to Computer Use and tracked `standby`, `recording`, `paused`, `review`, and `error` runtime states.
 - [x] 2026-07-15 packaged API state transitions passed for start/resume, pause, pending review count, and OCR service alert.
+- [x] 2026-09-04 all 61 unit/integration tests, Python compileall, and both JavaScript syntax checks passed after the reliability review.
+- [x] 2026-09-04 packaged `0.4.1` CLI reported the correct version and passed offline doctor with all bundled Windows dependencies available.
+- [x] 2026-09-04 packaged `WorkTrace.exe` started one desktop process, exposed `/desktop-pet` with HTTP 200, and reported an automatically running recorder loop through `/api/status`.
 
 ## Findings Fixed During Review
 
@@ -81,22 +89,33 @@ data/             Runtime event/report state, not committed
 - [x] Fixed Chinese rule-based timeline similarity returning zero for related non-identical sentences.
 - [x] Fixed packaged native desktop pet opening an empty transparent WebView because local `file:///` mascot images were not reliably loaded.
 - [x] Fixed pywebview recursively scanning native window objects by keeping bridge references private.
+- [x] Fixed high-confidence `is_work=false` responses being able to enter the effective timeline when the model returned contradictory JSON.
+- [x] Fixed simultaneous scheduled and manual records producing duplicate captures and event writes.
+- [x] Fixed invalid config hot reloads replacing the last working config and stale service failures remaining on the desktop pet.
+- [x] Fixed generated reports and mutable local state being vulnerable to partial writes.
+- [x] Fixed desktop and tray launches showing the UI without actually starting the background recorder.
+- [x] Fixed empty bulk-review API requests selecting every pending event.
 
 ## Known Gaps
 
-- [ ] `config.lan.example.yaml` still contains a rejected LLM key for LiteLLM; real testing required a temporary local config using the actual LiteLLM master key. Do not commit real keys.
+- [ ] `config.lan.example.yaml` intentionally contains a placeholder key; real LAN testing requires a private local config. Do not commit real keys.
 - [ ] Computer Use can read the WebView accessibility tree, but screenshot capture and click injection remain unreliable for the transparent pywebview window on this machine; the native bridge and controls are present and unit tested.
-- [ ] The current workstation is on `172.16.16.0/24`; 2026-07-14 live retest of `192.168.8.29` OCR/LLM/SSH timed out until the LAN route is restored.
+- [ ] 2026-09-04 Computer Use GUI inspection could not run because the local plugin reported `Trusted RPC service is not configured`; packaged GUI verification used process/window metadata and the real local API instead.
+- [ ] 2026-09-04 live OCR retest of `192.168.8.29:8866` timed out from the current workstation, so current-code LLM and full `record-once` LAN verification remain pending until the route is restored.
 - [ ] Meeting state and media playback detection are not yet part of Windows foreground guards.
 - [ ] Multi-monitor capture, region selection, and screenshot redaction are not implemented.
 - [ ] Report editing exists in the console, but there is no rich native editor or versioned report history.
 - [ ] Installer, signing, upgrade flow, and release channel are not implemented.
 
-## Next Development Plan
+## Next Development Goal: v0.5.0 First-Run Readiness
 
-1. Add an installer and first-run setup wizard for OCR/LLM endpoints, API key, work periods, and optional autostart.
-2. Persist service diagnostics history with OCR/LLM latency, HTTP status, retry count, and recent failures.
-3. Extend Windows foreground guards with meeting state and media playback rules.
-4. Add native desktop notifications for review queue and repeated service failures.
-5. Add multi-monitor capture, region selection, and screenshot redaction.
-6. Add a rich report editor with local version history.
+The next single milestone is to make a new Windows user reach the first valid event without editing YAML or guessing service state.
+
+- [ ] Show a first-run setup flow when OCR/LLM endpoints are still placeholders or have not passed validation.
+- [ ] Validate OCR URL, protocol, LLM URL, API key, model, work periods, and storage paths before enabling automatic capture.
+- [ ] Persist the last 100 OCR/LLM checks with latency, HTTP status, retry count, and user-facing failure category.
+- [ ] Add bounded retries for transport errors, HTTP 429, and HTTP 5xx without retrying authentication or validation failures.
+- [ ] Provide a one-click end-to-end test that captures once, runs OCR and classification, and clearly shows where the chain failed.
+- [ ] Package and verify the flow in `WorkTrace.exe` with Computer Use and a real LAN service configuration.
+
+After v0.5.0, continue with meeting/media foreground guards, native notifications, multi-monitor/redaction, report history, and the signed installer/update channel.

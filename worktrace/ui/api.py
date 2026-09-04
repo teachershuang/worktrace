@@ -5,6 +5,7 @@ import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import yaml
 from fastapi import Body, FastAPI, HTTPException, Query
@@ -14,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from worktrace import __version__
 from worktrace.capture.idle import get_idle_seconds
 from worktrace.capture.foreground import evaluate_foreground
+from worktrace.config.logging import setup_logging
 from worktrace.config.settings import ConfigError
 from worktrace.llm.client import LLMError
 from worktrace.ocr.client import OCRError
@@ -21,10 +23,12 @@ from worktrace.runtime.autostart import AutostartManager
 from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
 from worktrace.runtime.recorder import RecordingInProgressError
+from worktrace.runtime.files import atomic_write_text
 from worktrace.runtime.time_windows import is_within_work_periods
 from worktrace.timeline.merge import merge_events
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+API_KEY_MASK = "********"
 
 
 class ConsoleRuntime:
@@ -69,8 +73,16 @@ class ConsoleRuntime:
         was_running = self.loop_running()
         was_paused = self.context.state_store.load().paused
         self.stop_loop(timeout=3.0)
+        next_state = context.state_store.load()
+        if next_state.last_activity_status == "failed":
+            context.state_store.mark_activity(
+                status="skipped",
+                reason="配置已更新，等待下一次记录",
+                occurred_at=datetime.now().isoformat(timespec="seconds"),
+            )
         with self._lock:
             self.context = context
+            self.service_checks = {"ocr": None, "llm": None}
         if not was_running:
             return False
         if was_paused:
@@ -80,12 +92,17 @@ class ConsoleRuntime:
         return self.start_loop()
 
     def record_service_check(self, name: str, *, ok: bool, message: str, elapsed_ms: int) -> None:
-        self.service_checks[name] = {
-            "ok": ok,
-            "message": message,
-            "elapsed_ms": elapsed_ms,
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
-        }
+        with self._lock:
+            self.service_checks[name] = {
+                "ok": ok,
+                "message": message,
+                "elapsed_ms": elapsed_ms,
+                "checked_at": datetime.now().isoformat(timespec="seconds"),
+            }
+
+    def service_checks_snapshot(self) -> dict[str, dict[str, Any] | None]:
+        with self._lock:
+            return {name: dict(value) if value else None for name, value in self.service_checks.items()}
 
 
 def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -> FastAPI:
@@ -114,7 +131,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         service_alert = service_alert_payload(
             state,
             ocr_consecutive_failures=context.recorder.consecutive_ocr_failures,
-            service_checks=runtime.service_checks,
+            service_checks=runtime.service_checks_snapshot(),
         )
         return {
             "loop_running": runtime.loop_running(),
@@ -189,7 +206,8 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
             "config_path": str(config_path),
             "llm": {
                 "base_url": settings.llm.base_url,
-                "api_key": settings.llm.api_key,
+                "api_key": API_KEY_MASK if settings.llm.api_key else "",
+                "api_key_configured": bool(settings.llm.api_key),
                 "model": settings.llm.model,
                 "timeout_seconds": settings.llm.timeout_seconds,
                 "trust_env": settings.llm.trust_env,
@@ -221,21 +239,29 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
     @app.put("/api/config/editable")
     def config_save(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         nonlocal context
-        config_payload = normalize_config_payload(payload)
+        config_payload = normalize_config_payload(payload, existing_api_key=context.settings.llm.api_key)
         try:
             validated = context.settings.__class__.model_validate(config_payload)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"配置校验失败: {exc}") from exc
 
+        serialized = yaml.safe_dump(validated.model_dump(mode="json"), allow_unicode=True, sort_keys=False)
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            yaml.safe_dump(validated.model_dump(mode="json"), allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
+        candidate_path = config_path.with_name(f".{config_path.name}.{uuid4().hex}.tmp")
+        previous_log_dir = context.settings.storage.log_dir
         try:
-            next_context = build_app_context(config_path, verbose=verbose)
+            atomic_write_text(candidate_path, serialized)
+            next_context = build_app_context(candidate_path, verbose=verbose, configure_logging=False)
+            setup_logging(next_context.settings.storage.log_dir, verbose=verbose)
+            candidate_path.replace(config_path)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"配置已写入，但热更新失败，请重启 WorkTrace: {exc}") from exc
+            try:
+                setup_logging(previous_log_dir, verbose=verbose)
+            except OSError:
+                pass
+            raise HTTPException(status_code=422, detail=f"配置无法生效，原配置已保留: {exc}") from exc
+        finally:
+            candidate_path.unlink(missing_ok=True)
         loop_restarted = runtime.replace_context(next_context)
         context = next_context
         return {
@@ -381,7 +407,7 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
         if not isinstance(content, str):
             raise HTTPException(status_code=422, detail="content must be a string")
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)
         return {
             "kind": kind,
             "saved": True,
@@ -405,12 +431,12 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
                 "url": context.settings.ocr.url,
                 "protocol": context.settings.ocr.protocol,
                 "consecutive_failures": context.recorder.consecutive_ocr_failures,
-                "last_check": runtime.service_checks.get("ocr"),
+                "last_check": runtime.service_checks_snapshot().get("ocr"),
             },
             "llm": {
                 "base_url": context.settings.llm.base_url,
                 "model": context.settings.llm.model,
-                "last_check": runtime.service_checks.get("llm"),
+                "last_check": runtime.service_checks_snapshot().get("llm"),
             },
             "storage": [
                 {
@@ -617,7 +643,7 @@ def foreground_payload(decision) -> dict[str, Any]:
     }
 
 
-def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_config_payload(payload: dict[str, Any], *, existing_api_key: str = "") -> dict[str, Any]:
     def section(name: str) -> dict[str, Any]:
         value = payload.get(name, {})
         if not isinstance(value, dict):
@@ -641,10 +667,14 @@ def normalize_config_payload(payload: dict[str, Any]) -> dict[str, Any]:
     else:
         fullscreen_skip_apps = fullscreen_apps_raw
 
+    api_key = str(llm.get("api_key", ""))
+    if api_key == API_KEY_MASK:
+        api_key = existing_api_key
+
     return {
         "llm": {
             "base_url": str(llm.get("base_url", "")).strip(),
-            "api_key": str(llm.get("api_key", "")),
+            "api_key": api_key,
             "model": str(llm.get("model", "")).strip(),
             "timeout_seconds": float(llm.get("timeout_seconds", 60)),
             "trust_env": bool(llm.get("trust_env", False)),

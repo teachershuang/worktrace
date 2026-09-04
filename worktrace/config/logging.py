@@ -5,6 +5,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+class ResilientRotatingFileHandler(RotatingFileHandler):
+    def _open(self):
+        Path(self.baseFilename).parent.mkdir(parents=True, exist_ok=True)
+        return super()._open()
+
+
 def setup_logging(log_dir: Path, verbose: bool = False) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     level = logging.DEBUG if verbose else logging.INFO
@@ -24,7 +30,7 @@ def setup_logging(log_dir: Path, verbose: bool = False) -> None:
     console.setLevel(level)
     root.addHandler(console)
 
-    file_handler = RotatingFileHandler(
+    file_handler = ResilientRotatingFileHandler(
         log_dir / "worktrace.log",
         maxBytes=2_000_000,
         backupCount=5,

@@ -303,6 +303,8 @@ storage:
             try:
                 client = TestClient(create_app(config_path))
                 current = client.get("/api/config/editable").json()
+                self.assertEqual(current["llm"]["api_key"], "********")
+                self.assertTrue(current["llm"]["api_key_configured"])
                 current["llm"]["base_url"] = "http://192.168.8.29:4000/v1"
                 current["llm"]["model"] = "Qwen3.6-35B-A3B-GGUF"
                 current["ocr"]["url"] = "http://192.168.8.29:8866/ocr"
@@ -323,6 +325,7 @@ storage:
                 self.assertIn("screenshot_interval_seconds: 120", saved)
                 self.assertIn("short_poll_interval_seconds: 3", saved)
                 self.assertIn("vlc.exe", saved)
+                self.assertIn("api_key: test", saved)
                 summary = client.get("/api/config/summary").json()
                 self.assertEqual(summary["llm"]["base_url"], "http://192.168.8.29:4000/v1")
                 self.assertEqual(summary["ocr"]["url"], "http://192.168.8.29:8866/ocr")
@@ -331,6 +334,46 @@ storage:
                 self.assertEqual(summary["recording"]["fullscreen_skip_apps"], ["vlc.exe", "game.exe"])
             finally:
                 logging.shutdown()
+
+    def test_invalid_runtime_config_does_not_replace_working_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+            original = config_path.read_text(encoding="utf-8")
+            blocked_data_dir = root / "not-a-directory"
+            blocked_data_dir.write_text("file", encoding="utf-8")
+
+            try:
+                client = TestClient(create_app(config_path))
+                current = client.get("/api/config/editable").json()
+                current["storage"]["data_dir"] = str(blocked_data_dir)
+
+                response = client.put("/api/config/editable", json=current)
+
+                self.assertEqual(response.status_code, 422)
+                self.assertIn("原配置已保留", response.json()["detail"])
+                self.assertEqual(config_path.read_text(encoding="utf-8"), original)
+            finally:
+                logging.shutdown()
+
+    def test_context_replacement_clears_stale_service_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:
+            first_state = RuntimeStateStore(Path(first_dir) / "runtime_state.json")
+            second_state = RuntimeStateStore(Path(second_dir) / "runtime_state.json")
+            first = SimpleNamespace(settings=object(), recorder=object(), state_store=first_state)
+            second = SimpleNamespace(settings=object(), recorder=object(), state_store=second_state)
+            runtime = ConsoleRuntime(first)
+            runtime.record_service_check("llm", ok=False, message="old failure", elapsed_ms=1)
+            second_state.mark_activity(
+                status="failed",
+                reason="LLM 认证失败",
+                occurred_at="2026-09-04T10:00:00",
+            )
+
+            runtime.replace_context(second)
+
+            self.assertEqual(runtime.service_checks_snapshot(), {"ocr": None, "llm": None})
+            self.assertEqual(second_state.load().last_activity_status, "skipped")
 
     def test_console_runtime_stop_interrupts_sleeping_loop(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

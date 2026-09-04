@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from worktrace.runtime.files import atomic_write_text
+
 
 @dataclass(frozen=True)
 class RuntimeState:
@@ -48,12 +50,10 @@ class RuntimeStateStore:
             self._save_unlocked(state)
 
     def _save_unlocked(self, state: RuntimeState) -> None:
-        temporary_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
-        temporary_path.write_text(
+        atomic_write_text(
+            self.path,
             json.dumps(state.__dict__, ensure_ascii=False, indent=2),
-            encoding="utf-8",
         )
-        temporary_path.replace(self.path)
 
     def pause(self) -> None:
         with self._lock:

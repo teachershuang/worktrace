@@ -26,9 +26,15 @@ class AppContext:
     reports: ReportGenerator
 
 
-def build_app_context(config_path: Path, verbose: bool = False) -> AppContext:
+def build_app_context(
+    config_path: Path,
+    verbose: bool = False,
+    *,
+    configure_logging: bool = True,
+) -> AppContext:
     settings = load_config(config_path)
-    setup_logging(settings.storage.log_dir, verbose=verbose)
+    if configure_logging:
+        setup_logging(settings.storage.log_dir, verbose=verbose)
     llm = LLMClient(settings.llm)
     ocr = OCRClient(settings.ocr)
     store = EventStore(settings.storage.data_dir)

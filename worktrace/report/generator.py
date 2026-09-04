@@ -6,6 +6,7 @@ from pathlib import Path
 
 from worktrace.llm.client import ChatMessage, LLMClient, LLMError
 from worktrace.prompts import load_prompt
+from worktrace.runtime.files import atomic_write_text
 from worktrace.timeline.merge import TimelineItem, merge_events
 from worktrace.timeline.store import EventStore
 
@@ -28,7 +29,7 @@ class ReportGenerator:
         prompt = load_prompt("generate_daily_report.md")
         content = self._generate(prompt, render_timeline(timeline))
         path = self.output_dir / f"{target_day.isoformat()}-daily.md"
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)
         return path
 
     def build_weekly_report(self, day: date | None = None) -> Path:
@@ -51,7 +52,7 @@ class ReportGenerator:
         )
         content = self._generate(prompt, user_content)
         path = self.output_dir / f"{start.isoformat()}_to_{end.isoformat()}-weekly.md"
-        path.write_text(content, encoding="utf-8")
+        atomic_write_text(path, content)
         return path
 
     def _generate(self, system_prompt: str, user_content: str) -> str:

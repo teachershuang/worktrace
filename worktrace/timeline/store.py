@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
+from worktrace.runtime.files import atomic_write_text
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,12 +112,8 @@ class EventStore:
 
     @staticmethod
     def _replace_jsonl_unlocked(path: Path, items: Iterable[dict[str, Any]]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = path.with_suffix(f"{path.suffix}.tmp")
-        with temporary_path.open("w", encoding="utf-8") as file:
-            for item in items:
-                file.write(json.dumps(item, ensure_ascii=False) + "\n")
-        temporary_path.replace(path)
+        content = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in items)
+        atomic_write_text(path, content)
 
     @staticmethod
     def _read_jsonl_unlocked(path: Path) -> list[dict[str, Any]]:

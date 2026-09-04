@@ -126,7 +126,7 @@ def launch_desktop(
         console.print(f"[yellow]Native desktop launch failed, falling back to browser console:[/yellow] {exc}")
 
     webbrowser.open(f"http://{host}:{port}")
-    app_instance = create_app(config_path, verbose=verbose)
+    app_instance = create_app(config_path, verbose=verbose, auto_start_recording=True)
     console.print(f"[green]WorkTrace desktop:[/green] http://{host}:{port}")
     console.print(f"[cyan]Config:[/cyan] {config_path}")
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
@@ -444,7 +444,7 @@ def run_console(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging."),
 ) -> None:
     """Run the local FastAPI control console."""
-    app_instance = create_app(config, verbose=verbose)
+    app_instance = create_app(config, verbose=verbose, auto_start_recording=True)
     console.print(f"[green]WorkTrace console:[/green] http://{host}:{port}")
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
 

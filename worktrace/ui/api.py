@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -105,11 +106,27 @@ class ConsoleRuntime:
             return {name: dict(value) if value else None for name, value in self.service_checks.items()}
 
 
-def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -> FastAPI:
+def create_app(
+    config_path: Path = Path("config.yaml"),
+    verbose: bool = False,
+    *,
+    auto_start_recording: bool = False,
+) -> FastAPI:
     context = build_app_context(config_path, verbose=verbose)
     runtime = ConsoleRuntime(context)
     autostart = AutostartManager(config_path)
-    app = FastAPI(title="WorkTrace Local Console", version=__version__)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        if auto_start_recording:
+            runtime.start_loop()
+        try:
+            yield
+        finally:
+            if runtime.loop_running():
+                runtime.stop_loop(timeout=5.0)
+
+    app = FastAPI(title="WorkTrace Local Console", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

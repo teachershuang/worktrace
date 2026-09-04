@@ -245,7 +245,8 @@ storage:
 
     def test_desktop_pet_endpoint_serves_dynamic_client(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = write_test_config(Path(temp_dir))
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
             try:
                 client = TestClient(create_app(config_path))
                 response = client.get("/desktop-pet")
@@ -388,6 +389,24 @@ storage:
 
             self.assertLess(time.perf_counter() - started_at, 0.5)
             self.assertFalse(runtime.loop_running())
+
+    def test_auto_start_app_runs_and_stops_background_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+            RuntimeStateStore(root / "data" / "runtime_state.json").pause()
+
+            try:
+                with patch("worktrace.ui.api.BackgroundRecorderLoop", InterruptibleFakeLoop):
+                    app = create_app(config_path, auto_start_recording=True)
+                    with TestClient(app) as client:
+                        status = client.get("/api/status").json()
+                        self.assertTrue(status["loop_running"])
+                        self.assertTrue(status["paused"])
+
+                    self.assertFalse(app.state.runtime.loop_running())
+            finally:
+                logging.shutdown()
 
     def test_console_runtime_restarts_loop_after_context_replacement(self) -> None:
         with tempfile.TemporaryDirectory() as first_dir, tempfile.TemporaryDirectory() as second_dir:

@@ -34,9 +34,12 @@ class TrayRuntime:
     def console_url(self) -> str:
         return f"http://{self.host}:{self.port}"
 
-    def start_recording(self) -> None:
+    def start_recording(self, *, preserve_pause: bool = False) -> None:
         with self._lock:
-            self.context.state_store.start()
+            if preserve_pause:
+                self.context.state_store.clear_stop()
+            else:
+                self.context.state_store.start()
             if self._record_thread and self._record_thread.is_alive():
                 return
             self._record_stop_event = threading.Event()
@@ -114,6 +117,7 @@ def run_tray(config_path: Path = Path("config.yaml"), host: str = "127.0.0.1", p
     import pystray
 
     runtime = TrayRuntime(config_path=config_path, host=host, port=port, verbose=verbose)
+    runtime.start_recording(preserve_pause=True)
     icon_ref: dict[str, pystray.Icon] = {}
     pet_ref: dict[str, DesktopPetWindow] = {}
 

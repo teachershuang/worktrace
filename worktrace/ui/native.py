@@ -205,7 +205,7 @@ def start_local_server(
     verbose: bool = False,
 ) -> LocalServerHandle:
     port = choose_available_port(host, preferred_port)
-    app = create_app(config_path, verbose=verbose)
+    app = create_app(config_path, verbose=verbose, auto_start_recording=True)
     config = uvicorn.Config(app, host=host, port=port, log_level="info" if verbose else "warning")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, daemon=True, name="worktrace-native-api")

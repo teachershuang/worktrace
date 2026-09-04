@@ -172,6 +172,40 @@ storage:
             finally:
                 logging.shutdown()
 
+    def test_empty_bulk_review_request_keeps_queue_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+            store = EventStore(root / "data")
+            event = store.append_review(make_review_event("Keep me"), datetime.now().date())
+
+            try:
+                client = TestClient(create_app(config_path))
+                response = client.post("/api/review/bulk/work", json={"ids": []})
+
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(store.load_review(datetime.now().date()), [event])
+                self.assertEqual(store.load_effective(datetime.now().date()), [])
+            finally:
+                logging.shutdown()
+
+    def test_invalid_numeric_config_returns_validation_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = write_test_config(root)
+
+            try:
+                client = TestClient(create_app(config_path))
+                current = client.get("/api/config/editable").json()
+                current["recording"]["screenshot_interval_seconds"] = "not-a-number"
+
+                response = client.put("/api/config/editable", json=current)
+
+                self.assertEqual(response.status_code, 422)
+                self.assertIn("配置校验失败", response.json()["detail"])
+            finally:
+                logging.shutdown()
+
     def test_single_review_action_uses_selected_history_date(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

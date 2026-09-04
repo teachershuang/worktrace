@@ -256,8 +256,8 @@ def create_app(
     @app.put("/api/config/editable")
     def config_save(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         nonlocal context
-        config_payload = normalize_config_payload(payload, existing_api_key=context.settings.llm.api_key)
         try:
+            config_payload = normalize_config_payload(payload, existing_api_key=context.settings.llm.api_key)
             validated = context.settings.__class__.model_validate(config_payload)
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"配置校验失败: {exc}") from exc
@@ -360,6 +360,7 @@ def create_app(
     def review_bulk_work(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
         payload = payload or {}
         ids = normalize_id_list(payload.get("ids"))
+        require_review_selection(ids)
         target_day = parse_day(payload.get("date"))
         moved = context.store.resolve_reviews(target_day, ids, as_work=True)
         return {"marked": "work", "count": len(moved), "date": target_day.isoformat()}
@@ -368,6 +369,7 @@ def create_app(
     def review_bulk_nonwork(payload: dict[str, Any] | None = Body(default=None)) -> dict[str, Any]:
         payload = payload or {}
         ids = normalize_id_list(payload.get("ids"))
+        require_review_selection(ids)
         target_day = parse_day(payload.get("date"))
         moved = context.store.resolve_reviews(target_day, ids, as_work=False)
         return {"marked": "nonwork", "count": len(moved), "date": target_day.isoformat()}
@@ -523,6 +525,11 @@ def normalize_id_list(value: Any) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise HTTPException(status_code=422, detail="ids must be a string array")
     return value
+
+
+def require_review_selection(ids: list[str]) -> None:
+    if not ids:
+        raise HTTPException(status_code=422, detail="请至少选择一条待确认事件")
 
 
 def is_writable_dir(path: Path) -> bool:
@@ -693,23 +700,23 @@ def normalize_config_payload(payload: dict[str, Any], *, existing_api_key: str =
             "base_url": str(llm.get("base_url", "")).strip(),
             "api_key": api_key,
             "model": str(llm.get("model", "")).strip(),
-            "timeout_seconds": float(llm.get("timeout_seconds", 60)),
-            "trust_env": bool(llm.get("trust_env", False)),
+            "timeout_seconds": llm.get("timeout_seconds", 60),
+            "trust_env": llm.get("trust_env", False),
         },
         "ocr": {
             "url": str(ocr.get("url", "")).strip(),
             "protocol": str(ocr.get("protocol", "multipart")).strip(),
-            "timeout_seconds": float(ocr.get("timeout_seconds", 30)),
-            "trust_env": bool(ocr.get("trust_env", False)),
+            "timeout_seconds": ocr.get("timeout_seconds", 30),
+            "trust_env": ocr.get("trust_env", False),
         },
         "recording": {
             "work_periods": work_periods,
-            "screenshot_interval_seconds": int(recording.get("screenshot_interval_seconds", 300)),
-            "short_poll_interval_seconds": int(recording.get("short_poll_interval_seconds", 5)),
-            "idle_skip_minutes": int(recording.get("idle_skip_minutes", 10)),
-            "enable_tray": bool(recording.get("enable_tray", False)),
-            "skip_when_screen_locked": bool(recording.get("skip_when_screen_locked", True)),
-            "skip_own_windows": bool(recording.get("skip_own_windows", True)),
+            "screenshot_interval_seconds": recording.get("screenshot_interval_seconds", 300),
+            "short_poll_interval_seconds": recording.get("short_poll_interval_seconds", 5),
+            "idle_skip_minutes": recording.get("idle_skip_minutes", 10),
+            "enable_tray": recording.get("enable_tray", False),
+            "skip_when_screen_locked": recording.get("skip_when_screen_locked", True),
+            "skip_own_windows": recording.get("skip_own_windows", True),
             "fullscreen_skip_apps": fullscreen_skip_apps,
         },
         "storage": {

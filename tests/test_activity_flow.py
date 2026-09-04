@@ -15,7 +15,7 @@ from worktrace.classifier.activity import (
 from worktrace.ocr.client import OCRResult
 from worktrace.runtime.recorder import RecordingInProgressError, WorkRecorder, compact_event_for_context
 from worktrace.runtime.state import RuntimeStateStore
-from worktrace.timeline.store import EventStore
+from worktrace.timeline.store import EventStore, split_by_id_prefix
 
 
 class FakeLLM:
@@ -69,6 +69,14 @@ class FailingClassifier:
 
 
 class ActivityFlowTests(unittest.TestCase):
+    def test_empty_id_selection_does_not_select_all_events(self) -> None:
+        items = [{"id": "one"}, {"id": "two"}]
+
+        selected, remaining = split_by_id_prefix(items, [])
+
+        self.assertEqual(selected, [])
+        self.assertEqual(remaining, items)
+
     def test_non_work_result_never_enters_effective_timeline(self) -> None:
         classifier = ActivityClassifier(
             FakeLLM(

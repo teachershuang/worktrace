@@ -146,7 +146,7 @@ def split_by_id_prefix(
     items: list[dict[str, Any]], id_prefixes: list[str]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if not id_prefixes:
-        return items, []
+        return [], items
     selected = []
     remaining = []
     for item in items:

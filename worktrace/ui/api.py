@@ -20,6 +20,7 @@ from worktrace.ocr.client import OCRError
 from worktrace.runtime.autostart import AutostartManager
 from worktrace.runtime.app_context import AppContext, build_app_context
 from worktrace.runtime.loop import BackgroundRecorderLoop
+from worktrace.runtime.recorder import RecordingInProgressError
 from worktrace.runtime.time_windows import is_within_work_periods
 from worktrace.timeline.merge import merge_events
 
@@ -296,6 +297,8 @@ def create_app(config_path: Path = Path("config.yaml"), verbose: bool = False) -
     def record_once() -> dict[str, Any]:
         try:
             return context.recorder.record_once()
+        except RecordingInProgressError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=500, detail=describe_runtime_error(exc)) from exc
 

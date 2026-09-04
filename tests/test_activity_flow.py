@@ -13,7 +13,7 @@ from worktrace.classifier.activity import (
     ClassificationContext,
 )
 from worktrace.ocr.client import OCRResult
-from worktrace.runtime.recorder import WorkRecorder, compact_event_for_context
+from worktrace.runtime.recorder import RecordingInProgressError, WorkRecorder, compact_event_for_context
 from worktrace.runtime.state import RuntimeStateStore
 from worktrace.timeline.store import EventStore
 
@@ -38,6 +38,18 @@ class FakeCapture:
         )
 
 
+class BlockingCapture(FakeCapture):
+    def __init__(self, captured_at: datetime, entered: threading.Event, release: threading.Event):
+        super().__init__(captured_at)
+        self.entered = entered
+        self.release = release
+
+    def capture_primary(self) -> ScreenSnapshot:
+        self.entered.set()
+        self.release.wait(timeout=2)
+        return super().capture_primary()
+
+
 class FakeOCR:
     def recognize_png(self, _image_bytes: bytes) -> OCRResult:
         return OCRResult(text="客户需求 接口 调试", raw={"text": "客户需求 接口 调试"})
@@ -57,6 +69,52 @@ class FailingClassifier:
 
 
 class ActivityFlowTests(unittest.TestCase):
+    def test_non_work_result_never_enters_effective_timeline(self) -> None:
+        classifier = ActivityClassifier(
+            FakeLLM(
+                {
+                    "should_record": True,
+                    "is_work": False,
+                    "category": "其他",
+                    "project": None,
+                    "title": "浏览购物页面",
+                    "summary": "查看个人购物信息",
+                    "confidence": 0.95,
+                    "need_review": False,
+                    "skip_reason": "私人内容",
+                }
+            )
+        )
+        context = ClassificationContext(
+            captured_at=datetime(2026, 6, 18, 10, 0, 0),
+            active_window=ActiveWindow(app_name="browser.exe", title="购物页面"),
+            ocr_text="订单 优惠券",
+            previous_event=None,
+            recent_summary="",
+            project_names_today=[],
+        )
+
+        decision = classifier.classify(context)
+
+        self.assertFalse(decision.should_record)
+        self.assertFalse(decision.need_review)
+
+    def test_decision_text_respects_report_material_limits(self) -> None:
+        decision = ActivityDecision(
+            should_record=True,
+            is_work=True,
+            category="开发编码",
+            project="WorkTrace",
+            title="标题" * 20,
+            summary="摘要" * 60,
+            confidence=0.9,
+            need_review=False,
+            skip_reason=None,
+        )
+
+        self.assertEqual(len(decision.title), 20)
+        self.assertEqual(len(decision.summary), 80)
+
     def test_low_confidence_result_is_forced_to_review(self) -> None:
         classifier = ActivityClassifier(
             FakeLLM(
@@ -258,6 +316,42 @@ class ActivityFlowTests(unittest.TestCase):
             self.assertEqual(state.last_activity_status, "failed")
             self.assertIn("LLM 认证失败", state.last_activity_reason or "")
             self.assertIsNone(state.last_event_id)
+
+    def test_recorder_rejects_overlapping_capture_cycles(self) -> None:
+        captured_at = datetime(2026, 7, 6, 10, 0, 0)
+        entered = threading.Event()
+        release = threading.Event()
+        decision = ActivityDecision(
+            should_record=True,
+            is_work=True,
+            category="开发编码",
+            project="WorkTrace",
+            title="测试并发记录",
+            summary="确保同一时刻只执行一次截图和识别",
+            confidence=0.9,
+            need_review=False,
+            skip_reason=None,
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = EventStore(Path(temp_dir))
+            recorder = WorkRecorder(
+                capture=BlockingCapture(captured_at, entered, release),
+                ocr=FakeOCR(),
+                classifier=FakeClassifier(decision),
+                store=store,
+            )
+            worker = threading.Thread(target=recorder.record_once)
+            worker.start()
+            self.assertTrue(entered.wait(timeout=1))
+
+            with self.assertRaises(RecordingInProgressError):
+                recorder.record_once()
+
+            release.set()
+            worker.join(timeout=2)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(len(store.load_raw(captured_at.date())), 1)
 
     def test_compact_event_for_context_drops_recursive_payload(self) -> None:
         event = {

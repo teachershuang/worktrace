@@ -42,12 +42,12 @@ class ActivityDecision(BaseModel):
     @field_validator("title")
     @classmethod
     def trim_title(cls, value: str) -> str:
-        return value.strip()[:40]
+        return value.strip()[:20]
 
     @field_validator("summary")
     @classmethod
     def trim_summary(cls, value: str) -> str:
-        return value.strip()[:160]
+        return value.strip()[:80]
 
     @field_validator("project")
     @classmethod
@@ -93,7 +93,9 @@ class ActivityClassifier:
         if decision.confidence < 0.6:
             updates["should_record"] = False
             updates["need_review"] = True
-        if decision.need_review:
+        elif decision.need_review:
+            updates["should_record"] = False
+        elif not decision.is_work:
             updates["should_record"] = False
         if updates:
             decision = decision.model_copy(update=updates)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,6 +19,10 @@ from worktrace.timeline.store import EventStore
 logger = logging.getLogger(__name__)
 
 
+class RecordingInProgressError(RuntimeError):
+    """Raised when another capture and classification cycle is still running."""
+
+
 class WorkRecorder:
     def __init__(
         self,
@@ -33,8 +38,17 @@ class WorkRecorder:
         self.store = store
         self.state_store = state_store
         self.consecutive_ocr_failures = 0
+        self._record_lock = threading.Lock()
 
     def record_once(self) -> dict[str, Any]:
+        if not self._record_lock.acquire(blocking=False):
+            raise RecordingInProgressError("已有记录任务正在执行，请稍后再试")
+        try:
+            return self._record_once_unlocked()
+        finally:
+            self._record_lock.release()
+
+    def _record_once_unlocked(self) -> dict[str, Any]:
         try:
             snapshot = self.capture.capture_primary()
         except CaptureError as exc:

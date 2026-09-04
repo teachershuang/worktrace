@@ -9,7 +9,7 @@ from datetime import datetime
 from worktrace.config.settings import AppSettings
 from worktrace.capture.idle import get_idle_seconds
 from worktrace.capture.foreground import evaluate_foreground
-from worktrace.runtime.recorder import WorkRecorder
+from worktrace.runtime.recorder import RecordingInProgressError, WorkRecorder
 from worktrace.runtime.state import RuntimeStateStore
 from worktrace.runtime.time_windows import is_within_work_periods
 
@@ -81,6 +81,9 @@ class BackgroundRecorderLoop:
 
             try:
                 self.recorder.record_once()
+            except RecordingInProgressError:
+                logger.info("record cycle skipped because another recording is in progress")
+                self._mark_loop_activity("skipped", "已有记录任务正在执行，本轮已跳过", now)
             except Exception as exc:
                 logger.exception("record cycle failed")
                 self._mark_loop_activity("failed", f"记录周期失败：{exc}", now)
